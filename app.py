@@ -79,6 +79,15 @@ h2, h3 { color: #5C2E0A !important; font-weight:700; }
 .kpi-val { font-size:24px; font-weight:800; color:#3B1A0A; }
 .kpi-lbl { font-size:12px; color:#7C4A1E; margin-top:3px; font-weight:600; }
 
+/* EXPANDERS */
+[data-testid="stExpander"] summary {
+    color: #3B1A0A !important; font-weight:700 !important;
+}
+[data-testid="stExpander"] summary:hover { color: #7C4A1E !important; }
+[data-testid="stExpander"] summary p,
+[data-testid="stExpander"] summary span { color: #3B1A0A !important; }
+details > summary { color: #3B1A0A !important; }
+
 /* INFO / SUCCESS / WARNING */
 .stAlert { border-radius:10px; }
 
