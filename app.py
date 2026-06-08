@@ -91,6 +91,72 @@ details > summary { color: #3B1A0A !important; }
 /* INFO / SUCCESS / WARNING */
 .stAlert { border-radius:10px; }
 
+/* INPUTS — texto, número, selectbox, multiselect, date, textarea */
+input, textarea,
+[data-baseweb="input"] input,
+[data-baseweb="textarea"] textarea,
+[data-baseweb="base-input"] input {
+    background-color: #fff8f0 !important;
+    color: #3B1A0A !important;
+    border-color: #c9a87a !important;
+    font-family: 'Nunito', sans-serif !important;
+}
+[data-baseweb="input"],
+[data-baseweb="base-input"],
+[data-baseweb="textarea"] {
+    background-color: #fff8f0 !important;
+    border-color: #c9a87a !important;
+    border-radius: 8px !important;
+}
+[data-baseweb="input"]:focus-within,
+[data-baseweb="base-input"]:focus-within,
+[data-baseweb="textarea"]:focus-within {
+    border-color: #7C4A1E !important;
+    box-shadow: 0 0 0 2px rgba(124,74,30,0.25) !important;
+}
+
+/* SELECT / DROPDOWN */
+[data-baseweb="select"] > div {
+    background-color: #fff8f0 !important;
+    border-color: #c9a87a !important;
+    border-radius: 8px !important;
+    color: #3B1A0A !important;
+}
+[data-baseweb="select"] span,
+[data-baseweb="select"] div { color: #3B1A0A !important; }
+[data-baseweb="popover"] { background-color: #fff8f0 !important; }
+[data-baseweb="menu"] { background-color: #fff8f0 !important; }
+[data-baseweb="menu"] li { color: #3B1A0A !important; }
+[data-baseweb="menu"] li:hover { background-color: #ede3d0 !important; }
+[data-baseweb="option"]:hover { background-color: #ede3d0 !important; }
+[aria-selected="true"][data-baseweb="option"] { background-color: #C17F3E !important; color:#F5EFE0 !important; }
+
+/* NUMBER INPUT buttons */
+[data-testid="stNumberInput"] button {
+    background-color: #ede3d0 !important;
+    color: #3B1A0A !important;
+    border: none !important;
+}
+[data-testid="stNumberInput"] button:hover { background-color: #c9a87a !important; }
+
+/* DATE INPUT */
+[data-testid="stDateInput"] input { background-color: #fff8f0 !important; color:#3B1A0A !important; }
+
+/* LABELS */
+label, .stTextInput label, .stNumberInput label,
+.stSelectbox label, .stDateInput label, .stTextArea label {
+    color: #5C2E0A !important;
+    font-weight: 600 !important;
+    font-family: 'Nunito', sans-serif !important;
+}
+
+/* MULTISELECT tags */
+[data-baseweb="tag"] {
+    background-color: #C17F3E !important;
+    color: #F5EFE0 !important;
+    border-radius: 6px !important;
+}
+
 /* LOGO sidebar */
 .logo-text {
     font-size:26px; font-weight:800; color:#F5EFE0 !important;
