@@ -206,13 +206,18 @@ if current == "dashboard":
         days = [(date.today() - timedelta(days=i)) for i in range(6, -1, -1)]
         day_strs = [str(d) for d in days]
         tipos_mov = {"Entradas": "entrada", "Ventas": "venta", "Bajas": "baja"}
-        colors_mov = {"Entradas": "#22c55e", "Ventas": "#3b82f6", "Bajas": "#ef4444"}
+        colors_mov = {
+            "Entradas": ("#22c55e", "rgba(34,197,94,0.15)"),
+            "Ventas":   ("#3b82f6", "rgba(59,130,246,0.15)"),
+            "Bajas":    ("#ef4444", "rgba(239,68,68,0.15)"),
+        }
         fig2 = go.Figure()
         for label, tipo in tipos_mov.items():
             counts = [sum(1 for m in movs if m.get("fecha") == d and m.get("tipo") == tipo) for d in day_strs]
+            line_color, fill_color = colors_mov[label]
             fig2.add_scatter(x=[d[5:] for d in day_strs], y=counts, name=label,
-                             mode="lines+markers", line=dict(color=colors_mov[label], width=2),
-                             fill="tozeroy", fillcolor=colors_mov[label].replace(")", ",0.1)").replace("rgb", "rgba") if "rgb" in colors_mov[label] else colors_mov[label] + "22")
+                             mode="lines+markers", line=dict(color=line_color, width=2),
+                             fill="tozeroy", fillcolor=fill_color)
         fig2.update_layout(height=300, margin=dict(t=10, b=10), legend=dict(orientation="h"))
         st.plotly_chart(fig2, use_container_width=True)
 
