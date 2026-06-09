@@ -66,6 +66,23 @@ h2, h3 { color: #5C2E0A !important; font-weight:700; }
 
 /* DATAFRAME */
 .stDataFrame { border-radius:10px; overflow:hidden; }
+[data-testid="stDataFrame"] > div { background:#fff8f0 !important; border-radius:10px; }
+
+/* DATA EDITOR (tabla editable) */
+[data-testid="stDataEditor"] > div { background:#fff8f0 !important; border-radius:10px; }
+
+/* METRIC valores grandes */
+[data-testid="metric-container"] [data-testid="stMetricValue"] { color: #3B1A0A !important; font-weight:800; }
+[data-testid="metric-container"] [data-testid="stMetricLabel"] { color: #7C4A1E !important; font-weight:600; }
+[data-testid="metric-container"] [data-testid="stMetricDelta"] { color: #5C2E0A !important; }
+
+/* Texto general en el cuerpo */
+p, span, div, li { color: #3B1A0A; }
+.stMarkdown p { color: #3B1A0A !important; }
+.stMarkdown strong { color: #3B1A0A !important; }
+
+/* CAPTION */
+.stCaption { color: #7C4A1E !important; }
 
 /* KPI CARDS */
 .kpi-box {
@@ -369,43 +386,73 @@ elif current == "insumos":
         if fcat!="Todas": lista=[i for i in lista if i.get("categoria")==fcat]
         if fstk=="Stock bajo": lista=[i for i in lista if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"]]
         elif fstk=="Stock OK": lista=[i for i in lista if not(i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"])]
-        st.markdown(f"**{len(lista)} insumos**")
+        st.markdown(f"**{len(lista)} insumos** — Haz doble clic en cualquier celda para editar. Luego pulsa **💾 Guardar cambios**.")
         if lista:
-            df_ins=pd.DataFrame([{"Nombre":i["nombre"],"Categoría":i.get("categoria",""),
-                "Stock":i.get("stock",0),"Mínimo":i.get("minimo",0),"Unidad":i.get("unidad",""),
-                "Costo unit.":fmt_cop(i.get("costo",0)),
-                "Valor total":fmt_cop(round(i.get("stock",0)*i.get("costo",0))),
-                "Proveedor":i.get("proveedor") or "—",
-                "Estado":"⚠️ Bajo" if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"] else "✓ OK"}
-                for i in lista])
-            st.dataframe(df_ins,hide_index=True,use_container_width=True)
-            st.markdown("---"); st.subheader("✏️ Editar insumo")
-            sel=st.selectbox("Selecciona insumo",["— Selecciona —"]+[i["nombre"] for i in lista])
-            if sel!="— Selecciona —":
-                ins=next(i for i in lista if i["nombre"]==sel)
-                with st.form("edit_ins"):
-                    r1,r2=st.columns(2)
-                    en=r1.text_input("Nombre",value=ins["nombre"])
-                    ec=r2.selectbox("Categoría",CATEGORIAS,index=CATEGORIAS.index(ins.get("categoria","Otros")) if ins.get("categoria") in CATEGORIAS else 0)
-                    r3,r4,r5=st.columns(3)
-                    eu=r3.selectbox("Unidad",UNIDADES,index=UNIDADES.index(ins["unidad"]) if ins.get("unidad") in UNIDADES else 0)
-                    es=r4.number_input("Stock actual",value=float(ins.get("stock",0)),step=0.5)
-                    em=r5.number_input("Stock mínimo",value=float(ins.get("minimo",0)),step=0.5)
-                    r6,r7,r8=st.columns(3)
-                    ek=r6.number_input("Costo (COP)",value=float(ins.get("costo",0)),step=100.0)
-                    ep=r7.text_input("Proveedor",value=ins.get("proveedor") or "")
-                    ev=r8.number_input("Vida útil (días)",value=int(ins.get("vida_util",0)),step=1)
-                    cs,cd=st.columns(2)
-                    if cs.form_submit_button("💾 Guardar cambios",use_container_width=True):
-                        upd={"nombre":en.strip(),"categoria":ec,"unidad":eu,"stock":es,"minimo":em,"proveedor":ep.strip(),"vida_util":ev}
-                        if ek!=float(ins.get("costo",0)):
-                            hist=ins.get("historial_precios") or []
-                            hist.append({"fecha":hoy(),"precio":ek,"precio_anterior":ins.get("costo",0)})
-                            upd["historial_precios"]=hist
-                        upd["costo"]=ek
-                        db.update_insumo(ins["id"],upd); st.success("✅ Actualizado"); reload()
-                    if cd.form_submit_button("🗑️ Eliminar",use_container_width=True,type="secondary"):
-                        db.delete_insumo(ins["id"]); st.warning("Eliminado"); reload()
+            df_edit = pd.DataFrame([{
+                "_id":           i["id"],
+                "Nombre":        i["nombre"],
+                "Categoría":     i.get("categoria",""),
+                "Unidad":        i.get("unidad",""),
+                "Stock":         float(i.get("stock",0)),
+                "Mínimo":        float(i.get("minimo",0)),
+                "Costo (COP)":   float(i.get("costo",0)),
+                "Proveedor":     i.get("proveedor") or "",
+                "Vida útil (d)": int(i.get("vida_util",0)),
+                "Valor total":   round(i.get("stock",0)*i.get("costo",0)),
+                "Estado":        "⚠️ Bajo" if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"] else "✓ OK",
+            } for i in lista])
+
+            edited = st.data_editor(
+                df_edit,
+                hide_index=True,
+                use_container_width=True,
+                num_rows="fixed",
+                column_config={
+                    "_id":           st.column_config.Column(disabled=True, width="small"),
+                    "Nombre":        st.column_config.TextColumn("Nombre", width="large"),
+                    "Categoría":     st.column_config.SelectboxColumn("Categoría", options=CATEGORIAS),
+                    "Unidad":        st.column_config.SelectboxColumn("Unidad", options=UNIDADES),
+                    "Stock":         st.column_config.NumberColumn("Stock", step=0.01, format="%.2f"),
+                    "Mínimo":        st.column_config.NumberColumn("Mínimo", step=0.01, format="%.2f"),
+                    "Costo (COP)":   st.column_config.NumberColumn("Costo (COP)", step=100, format="%d"),
+                    "Proveedor":     st.column_config.TextColumn("Proveedor"),
+                    "Vida útil (d)": st.column_config.NumberColumn("Vida útil (d)", step=1, format="%d"),
+                    "Valor total":   st.column_config.NumberColumn("Valor total", disabled=True, format="%d"),
+                    "Estado":        st.column_config.Column("Estado", disabled=True),
+                },
+                key="edit_insumos_table",
+            )
+
+            if st.button("💾 Guardar cambios", type="primary", use_container_width=True):
+                cambios = 0
+                for i, (orig, new_row) in enumerate(zip(lista, edited.to_dict("records"))):
+                    upd = {}
+                    if orig["nombre"]               != new_row["Nombre"]:        upd["nombre"]      = new_row["Nombre"].strip()
+                    if orig.get("categoria","")     != new_row["Categoría"]:     upd["categoria"]   = new_row["Categoría"]
+                    if orig.get("unidad","")        != new_row["Unidad"]:        upd["unidad"]      = new_row["Unidad"]
+                    if float(orig.get("stock",0))   != new_row["Stock"]:         upd["stock"]       = new_row["Stock"]
+                    if float(orig.get("minimo",0))  != new_row["Mínimo"]:        upd["minimo"]      = new_row["Mínimo"]
+                    if float(orig.get("costo",0))   != new_row["Costo (COP)"]:
+                        nuevo_costo = new_row["Costo (COP)"]
+                        hist = orig.get("historial_precios") or []
+                        hist.append({"fecha":hoy(),"precio":nuevo_costo,"precio_anterior":orig.get("costo",0)})
+                        upd["costo"] = nuevo_costo
+                        upd["historial_precios"] = hist
+                    if (orig.get("proveedor") or "") != new_row["Proveedor"]:    upd["proveedor"]   = new_row["Proveedor"]
+                    if int(orig.get("vida_util",0)) != int(new_row["Vida útil (d)"]): upd["vida_util"] = int(new_row["Vida útil (d)"])
+                    if upd:
+                        db.update_insumo(orig["id"], upd); cambios += 1
+                if cambios:
+                    st.success(f"✅ {cambios} insumo(s) actualizados"); reload()
+                else:
+                    st.info("No se detectaron cambios.")
+
+            st.markdown("---"); st.subheader("🗑️ Eliminar insumo")
+            sel_del = st.selectbox("Selecciona insumo a eliminar", ["— Selecciona —"] + [i["nombre"] for i in lista], key="del_ins")
+            if sel_del != "— Selecciona —":
+                ins_del = next(i for i in lista if i["nombre"] == sel_del)
+                if st.button(f"🗑️ Eliminar '{sel_del}'", type="secondary"):
+                    db.delete_insumo(ins_del["id"]); st.warning("Eliminado"); reload()
         else:
             st.info("Sin insumos. Agrega en ➕ o importa un CSV.")
 
