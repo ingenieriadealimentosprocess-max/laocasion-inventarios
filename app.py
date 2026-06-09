@@ -54,9 +54,38 @@ h2, h3 { color: #5C2E0A !important; font-weight:700; }
 .stForm { background: #fff8f0; border-radius:12px; padding:16px; border:1px solid #e8d5b7; }
 
 /* TABS */
-.stTabs [data-baseweb="tab-list"] { background-color: #ede3d0; border-radius:10px; padding:4px; }
-.stTabs [data-baseweb="tab"] { background:transparent; color:#7C4A1E; font-weight:600; border-radius:8px; }
-.stTabs [aria-selected="true"] { background-color:#3B1A0A !important; color:#F5EFE0 !important; }
+.stTabs [data-baseweb="tab-list"] {
+    background-color: #ede3d0; border-radius:10px; padding:4px;
+    flex-wrap: wrap; gap: 2px;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent; color: #7C4A1E !important;
+    font-weight: 600; border-radius: 8px;
+    font-family: 'Nunito', sans-serif !important;
+    font-size: 13px; padding: 6px 14px !important;
+    white-space: nowrap;
+}
+.stTabs [data-baseweb="tab"] p,
+.stTabs [data-baseweb="tab"] span,
+.stTabs [data-baseweb="tab"] div {
+    color: #7C4A1E !important;
+    font-size: 13px !important;
+}
+.stTabs [aria-selected="true"] {
+    background-color: #7C4A1E !important;
+    color: #F5EFE0 !important;
+}
+.stTabs [aria-selected="true"] p,
+.stTabs [aria-selected="true"] span,
+.stTabs [aria-selected="true"] div {
+    color: #F5EFE0 !important;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    background-color: #c9a87a !important;
+    color: #3B1A0A !important;
+}
+.stTabs [data-baseweb="tab-highlight"] { background-color: transparent !important; }
+.stTabs [data-baseweb="tab-border"]    { display: none !important; }
 
 /* MÉTRICAS */
 [data-testid="metric-container"] {
