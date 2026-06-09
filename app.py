@@ -374,7 +374,9 @@ if current == "dashboard":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "insumos":
     st.title("📦 Insumos")
-    tab_list,tab_add,tab_imp,tab_exp = st.tabs(["📋 Listado","➕ Agregar","📥 Importar CSV","📤 Exportar CSV"])
+    tab_list,tab_stock0,tab_minimos,tab_add,tab_imp,tab_exp = st.tabs([
+        "📋 Listado","📊 Stock inicial","🔔 Mínimos / Alertas","➕ Agregar","📥 Importar CSV","📤 Exportar CSV"
+    ])
 
     with tab_list:
         c1,c2,c3=st.columns([3,2,2])
@@ -455,6 +457,128 @@ elif current == "insumos":
                     db.delete_insumo(ins_del["id"]); st.warning("Eliminado"); reload()
         else:
             st.info("Sin insumos. Agrega en ➕ o importa un CSV.")
+
+    # ── STOCK INICIAL ──────────────────────────────────────────────────────────
+    with tab_stock0:
+        st.subheader("📊 Stock inicial importado")
+        st.markdown("Este es el inventario con el que arrancas. Fue importado desde tu archivo Excel.")
+
+        con_stock  = [i for i in insumos if (i.get("stock") or 0) > 0]
+        sin_stock  = [i for i in insumos if (i.get("stock") or 0) <= 0]
+        valor_total= sum(i.get("stock",0)*i.get("costo",0) for i in insumos)
+
+        k1,k2,k3,k4 = st.columns(4)
+        kpi(k1, len(insumos),    "Total insumos")
+        kpi(k2, len(con_stock),  "Con stock", "ok")
+        kpi(k3, len(sin_stock),  "Sin stock / en 0", "warn" if sin_stock else "ok")
+        kpi(k4, fmt_cop(round(valor_total/1000))+"k", "Valor total inventario")
+
+        st.markdown("---")
+        cat_s0 = st.selectbox("Filtrar categoría", ["Todas"]+CATEGORIAS, key="s0_cat")
+        busq_s0= st.text_input("🔍 Buscar", key="s0_busq")
+        mostrar_s0 = st.radio("Mostrar", ["Todos","Con stock","Sin stock / en 0"], horizontal=True, key="s0_filt")
+
+        lista_s0 = insumos
+        if cat_s0 != "Todas":    lista_s0 = [i for i in lista_s0 if i.get("categoria")==cat_s0]
+        if busq_s0:              lista_s0 = [i for i in lista_s0 if busq_s0.lower() in i["nombre"].lower()]
+        if mostrar_s0 == "Con stock":         lista_s0 = [i for i in lista_s0 if (i.get("stock") or 0) > 0]
+        elif mostrar_s0 == "Sin stock / en 0":lista_s0 = [i for i in lista_s0 if (i.get("stock") or 0) <= 0]
+
+        df_s0 = pd.DataFrame([{
+            "Nombre":      i["nombre"],
+            "Categoría":   i.get("categoria",""),
+            "Unidad":      i.get("unidad",""),
+            "Stock actual":float(i.get("stock",0)),
+            "Stock mínimo":float(i.get("minimo",0)),
+            "Costo unit.": float(i.get("costo",0)),
+            "Valor total": round(i.get("stock",0)*i.get("costo",0)),
+            "Estado":      "⚠️ Bajo" if i.get("minimo",0)>0 and i.get("stock",0)<=i.get("minimo",0)
+                           else ("📭 Sin stock" if (i.get("stock") or 0)<=0 else "✓ OK"),
+        } for i in lista_s0])
+
+        st.markdown(f"**{len(lista_s0)} insumos**")
+        st.dataframe(df_s0, hide_index=True, use_container_width=True,
+            column_config={
+                "Stock actual": st.column_config.NumberColumn(format="%.2f"),
+                "Stock mínimo": st.column_config.NumberColumn(format="%.2f"),
+                "Costo unit.":  st.column_config.NumberColumn(format="%d"),
+                "Valor total":  st.column_config.NumberColumn(format="%d"),
+            })
+        st.download_button(
+            "⬇️ Exportar stock inicial (CSV)",
+            df_s0.to_csv(index=False).encode("utf-8"),
+            f"stock_inicial_{hoy()}.csv", "text/csv", use_container_width=True
+        )
+
+    # ── MÍNIMOS / ALERTAS ─────────────────────────────────────────────────────
+    with tab_minimos:
+        st.subheader("🔔 Configurar stock mínimo por insumo")
+        st.markdown(
+            "Define el stock mínimo de cada insumo. Cuando el stock caiga **por debajo** "
+            "de ese valor, aparecerá una alerta en el Dashboard y en el módulo Alertas. "
+            "**Doble clic en 'Stock mínimo'** para editar. Luego pulsa **💾 Guardar mínimos**."
+        )
+
+        # resumen alertas actuales
+        bajo_m = [i for i in insumos if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"]]
+        sin_min= [i for i in insumos if (i.get("minimo") or 0)==0]
+        ma1,ma2,ma3 = st.columns(3)
+        kpi(ma1, len(bajo_m),  "Insumos bajo mínimo ahora", "danger" if bajo_m else "ok")
+        kpi(ma2, len(sin_min), "Sin mínimo definido",       "warn"   if sin_min else "ok")
+        kpi(ma3, len(insumos)-len(sin_min), "Con mínimo definido", "ok")
+
+        st.markdown("---")
+        fm1,fm2 = st.columns([3,2])
+        busq_m2 = fm1.text_input("🔍 Buscar insumo", key="min_busq")
+        cat_m2  = fm2.selectbox("Categoría", ["Todas"]+CATEGORIAS, key="min_cat")
+        solo_sin= st.checkbox("Mostrar solo insumos SIN mínimo definido", key="min_solo_sin")
+
+        lista_m2 = insumos
+        if busq_m2:      lista_m2 = [i for i in lista_m2 if busq_m2.lower() in i["nombre"].lower()]
+        if cat_m2 != "Todas": lista_m2 = [i for i in lista_m2 if i.get("categoria")==cat_m2]
+        if solo_sin:     lista_m2 = [i for i in lista_m2 if (i.get("minimo") or 0)==0]
+
+        df_min = pd.DataFrame([{
+            "_id":          i["id"],
+            "Nombre":       i["nombre"],
+            "Categoría":    i.get("categoria",""),
+            "Unidad":       i.get("unidad",""),
+            "Stock actual": float(i.get("stock",0)),
+            "Stock mínimo": float(i.get("minimo",0)),
+            "Alerta":       "🔴 BAJO" if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"]
+                            else ("⚪ Sin mínimo" if (i.get("minimo") or 0)==0 else "🟢 OK"),
+        } for i in lista_m2])
+
+        edited_min = st.data_editor(
+            df_min,
+            hide_index=True,
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "_id":          st.column_config.Column(disabled=True, width="small"),
+                "Nombre":       st.column_config.Column(disabled=True),
+                "Categoría":    st.column_config.Column(disabled=True),
+                "Unidad":       st.column_config.Column(disabled=True),
+                "Stock actual": st.column_config.NumberColumn(disabled=True, format="%.2f"),
+                "Stock mínimo": st.column_config.NumberColumn("Stock mínimo ✏️", step=0.5, format="%.2f",
+                                    help="Edita este valor. Si stock actual ≤ mínimo → alerta roja."),
+                "Alerta":       st.column_config.Column(disabled=True),
+            },
+            key="edit_minimos_table",
+        )
+
+        if st.button("💾 Guardar mínimos", type="primary", use_container_width=True):
+            cambios_m = 0
+            for orig, new_row in zip(lista_m2, edited_min.to_dict("records")):
+                nuevo_min = new_row["Stock mínimo"]
+                if float(orig.get("minimo",0)) != nuevo_min:
+                    db.update_insumo(orig["id"], {"minimo": nuevo_min})
+                    cambios_m += 1
+            if cambios_m:
+                st.success(f"✅ {cambios_m} mínimos actualizados — las alertas se activarán automáticamente.")
+                reload()
+            else:
+                st.info("No se detectaron cambios.")
 
     with tab_add:
         with st.form("add_ins",clear_on_submit=True):
