@@ -1061,7 +1061,7 @@ elif current == "movimientos":
                         ins_id=ing["ref_id"][4:]
                         ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
                         if ins_obj:
-                            need=calc.cant_bruta(ing.get("cantidad",0)*cant_v,ing.get("merma",0))
+                            need=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0))
                             disp=ins_obj.get("stock",0); ok=disp>=need
                             color="green" if ok else "red"
                             st.markdown(f":{color}[{'✓' if ok else '⚠️'}] **{ins_obj['nombre']}**: -{fmt_n(round(need,3))} {ins_obj.get('unidad','')} (disponible: {fmt_n(disp)})")
@@ -1074,7 +1074,7 @@ elif current == "movimientos":
                         if ing.get("ref_id","").startswith("ins:"):
                             ins_id=ing["ref_id"][4:]
                             ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
-                            if ins_obj and ins_obj.get("stock",0)<calc.cant_bruta(ing.get("cantidad",0)*cant_v,ing.get("merma",0)):
+                            if ins_obj and ins_obj.get("stock",0)<calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0)):
                                 sin_stock.append(ins_obj["nombre"])
                     if sin_stock: st.error(f"Stock insuficiente: {', '.join(sin_stock)}")
                     else:
@@ -1083,7 +1083,7 @@ elif current == "movimientos":
                                 ins_id=ing["ref_id"][4:]
                                 ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
                                 if ins_obj:
-                                    bruta=calc.cant_bruta(ing.get("cantidad",0)*cant_v,ing.get("merma",0))
+                                    bruta=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0))
                                     db.update_insumo(ins_id,{"stock":max(0,ins_obj.get("stock",0)-bruta)})
                         db.add_movimiento({"tipo":"venta","receta_id":rec_v2["id"],
                             "nombre":f"{rec_v2['nombre']}"+(f" x{cant_v}" if cant_v>1 else ""),
@@ -1137,7 +1137,7 @@ elif current == "kardex":
                 if not rec_v: continue
                 for ing in rec_v.get("ingredientes",[]):
                     if ing.get("ref_id","")==f"ins:{ins_k['id']}":
-                        bruta=calc.cant_bruta(ing.get("cantidad",0)*m.get("cantidad",1),ing.get("merma",0))
+                        bruta=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*m.get("cantidad",1),ing.get("merma",0))
                         ventas_k.append({"tipo":"venta","nombre":f"Venta: {rec_v['nombre']}","cantidad":bruta,
                             "costo_unit":ins_k.get("costo",0),"fecha":m.get("fecha"),"responsable":m.get("responsable","—"),"signo":-1})
             all_k=sorted([dict(m,signo=1 if m.get("tipo")=="entrada" else -1) for m in movs_k]+ventas_k,key=lambda m:m.get("fecha",""))
@@ -1304,7 +1304,7 @@ elif current == "reportes":
                 if rec_v:
                     for ing in rec_v.get("ingredientes",[]):
                         ref=calc.resolve_ref(ing.get("ref_id",""),insumos,subrecetas)
-                        consumo[ref["nombre"]]=consumo.get(ref["nombre"],0)+ing.get("cantidad",0)*m.get("cantidad",1)
+                        consumo[ref["nombre"]]=consumo.get(ref["nombre"],0)+ing.get("cantidad", ing.get("cant_neta", 0))*m.get("cantidad",1)
             elif m.get("tipo")=="salida":
                 consumo[m.get("nombre","?")]=consumo.get(m.get("nombre","?"),0)+m.get("cantidad",0)
         top=sorted(consumo.items(),key=lambda x:x[1],reverse=True)[:10]
@@ -1349,19 +1349,19 @@ elif current == "produccion":
                     if rid.startswith("ins:"):
                         ins_id=rid[4:]; ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
                         if ins_obj:
-                            cb=calc.cant_bruta(ing.get("cantidad",0)*porciones,ing.get("merma",0))
+                            cb=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*porciones,ing.get("merma",0))
                             if ins_id not in necesidades:
                                 necesidades[ins_id]={"nombre":ins_obj["nombre"],"unidad":ins_obj.get("unidad",""),"stock":ins_obj.get("stock",0),"costo":ins_obj.get("costo",0),"cantidad_bruta":0}
                             necesidades[ins_id]["cantidad_bruta"]+=cb
                     elif rid.startswith("sub:"):
                         sub_id=rid[4:]; sub=next((s for s in subrecetas if s["id"]==sub_id),None)
                         if sub:
-                            cant_sub=ing.get("cantidad",0)*porciones; rend=sub.get("rendimiento",1) or 1
+                            cant_sub=ing.get("cantidad", ing.get("cant_neta", 0))*porciones; rend=sub.get("rendimiento",1) or 1
                             for s_ing in sub.get("ingredientes",[]):
                                 if s_ing.get("ref_id","").startswith("ins:"):
                                     s_ins_id=s_ing["ref_id"][4:]; s_ins=next((i for i in insumos if i["id"]==s_ins_id),None)
                                     if s_ins:
-                                        sc=calc.cant_bruta(s_ing.get("cantidad",0)*(cant_sub/rend),s_ing.get("merma",0))
+                                        sc=calc.cant_bruta(s_ing.get("cantidad", ing.get("cant_neta", 0))*(cant_sub/rend),s_ing.get("merma",0))
                                         if s_ins_id not in necesidades:
                                             necesidades[s_ins_id]={"nombre":s_ins["nombre"],"unidad":s_ins.get("unidad",""),"stock":s_ins.get("stock",0),"costo":s_ins.get("costo",0),"cantidad_bruta":0}
                                         necesidades[s_ins_id]["cantidad_bruta"]+=sc
@@ -1443,7 +1443,7 @@ elif current == "produccion":
                         if ri.startswith("ins:"):
                             ins_id=ri[4:]; ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
                             if ins_obj:
-                                cb=calc.cant_bruta(ing.get("cantidad",0)*porciones,ing.get("merma",0))
+                                cb=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*porciones,ing.get("merma",0))
                                 if ins_id not in nec_sug:
                                     nec_sug[ins_id]={"nombre":ins_obj["nombre"],"unidad":ins_obj.get("unidad",""),"stock":ins_obj.get("stock",0),"costo":ins_obj.get("costo",0),"cantidad_bruta":0}
                                 nec_sug[ins_id]["cantidad_bruta"]+=cb
