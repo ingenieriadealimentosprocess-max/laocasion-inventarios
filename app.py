@@ -776,7 +776,10 @@ elif current == "subrecetas":
             if sel_s2!="— Selecciona —":
                 sub=next(s for s in subrecetas if s["nombre"]==sel_s2)
                 ct_sub=calc.costo_subreceta(sub,insumos,subrecetas); rend=sub.get("rendimiento",1) or 1
-                st.markdown(f"**Rendimiento:** {rend} {sub.get('unidad_rendimiento','')} | **Costo elaboración:** {fmt_cop(round(ct_sub))} | **Costo/unidad:** {fmt_cop(round(ct_sub/rend))}")
+                km1, km2, km3 = st.columns(3)
+                km1.metric("Rendimiento", f"{rend} {sub.get('unidad_rendimiento','')}")
+                km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
+                km3.metric("Costo / unidad", fmt_cop(round(ct_sub/rend)))
                 st.markdown("**✏️ Ingredientes — edita Cant. neta y Merma % directamente:**")
                 rows_si = []
                 for ing in sub.get("ingredientes", []):

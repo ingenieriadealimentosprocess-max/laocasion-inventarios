@@ -28,8 +28,32 @@ def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
         }
     raw_id = ref_id[4:] if ref_id.startswith("ins:") else ref_id
     ins = next((i for i in insumos if i["id"] == raw_id), None)
+
+    # Fallback para refs __UNKNOWN__: buscar por nombre en sub-recetas e insumos
+    if not ins and raw_id.startswith("__UNKNOWN__"):
+        nombre_buscado = raw_id[11:].lower().strip()
+        # Intentar sub-receta primero (sub-XXXgr suele ser sub-receta)
+        sub = next(
+            (s for s in subrecetas
+             if nombre_buscado in s["nombre"].lower() or s["nombre"].lower() in nombre_buscado),
+            None
+        )
+        if sub:
+            ct = costo_subreceta(sub, insumos, subrecetas)
+            rend = sub.get("rendimiento", 1) or 1
+            return {"nombre": "🧪 " + sub["nombre"],
+                    "unidad": sub.get("unidad_rendimiento", ""),
+                    "costo_unit": ct / rend}
+        # Intentar insumo por nombre parcial
+        ins = next(
+            (i for i in insumos
+             if nombre_buscado in i["nombre"].lower() or i["nombre"].lower() in nombre_buscado),
+            None
+        )
+
     if not ins:
-        return {"nombre": "(eliminado)", "unidad": "—", "costo_unit": 0}
+        return {"nombre": f"⚠️ {raw_id[11:] if raw_id.startswith('__UNKNOWN__') else raw_id}",
+                "unidad": "—", "costo_unit": 0}
     return {"nombre": ins["nombre"], "unidad": ins.get("unidad", ""), "costo_unit": ins.get("costo", 0)}
 
 
