@@ -266,7 +266,7 @@ PAGES = {
     "📦 Insumos":               "insumos",
     "📋 Recetas":               "recetas",
     "🧪 Sub-recetas":           "subrecetas",
-    "↕️ Movimientos":           "movimientos",
+    "🔄 Movimientos":           "movimientos",
     "📒 Kardex":                "kardex",
     "🗑️ Bajas":                "bajas",
     "🔔 Alertas":               "alertas",
@@ -985,7 +985,7 @@ elif current == "subrecetas":
 #  MOVIMIENTOS
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "movimientos":
-    st.title("↕️ Movimientos de Inventario")
+    st.title("🔄 Movimientos de Inventario")
     tab_e,tab_s,tab_v,tab_hist=st.tabs(["📥 Entrada","📤 Salida","🍽️ Venta / Despacho","📋 Historial"])
 
     with tab_e:
@@ -1521,7 +1521,7 @@ elif current == "ayuda":
 **Ejemplo:** Salsa de tomate → se usa en 5 recetas. Al cambiar el precio del tomate, todas las 5 recetas se recalculan.
         """)
 
-    with st.expander("↕️ Módulo: Movimientos",expanded=False):
+    with st.expander("🔄 Módulo: Movimientos",expanded=False):
         st.markdown("""
 **📥 Entrada:** Cuando llega mercancía. Suma al stock y actualiza el precio si cambió.
 
