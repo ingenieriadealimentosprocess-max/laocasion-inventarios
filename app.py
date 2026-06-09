@@ -1366,10 +1366,17 @@ El sistema genera alertas automáticas en tres categorías:
     st.markdown("---")
     st.subheader("📥 Descargar manual completo")
     try:
-        with open("logo_la_ocasion.pdf","rb") as f:
-            st.download_button("⬇️ Descargar logo La Ocasión (PDF)",f.read(),"logo_la_ocasion.pdf","application/pdf")
+        with open("manual_usuario.pdf","rb") as f:
+            st.download_button(
+                "⬇️ Descargar Manual de Usuario (PDF)",
+                f.read(),
+                "Manual_La_Ocasion_Inventarios.pdf",
+                "application/pdf",
+                use_container_width=True,
+                type="primary",
+            )
     except Exception:
-        pass
+        st.warning("Manual no disponible en este momento.")
 
     st.info("Para soporte o sugerencias, contacta a tu consultor de ingeniería de menú.")
 
