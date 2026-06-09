@@ -45,7 +45,10 @@ def costo_subreceta(sub: dict, insumos: list, subrecetas: list) -> float:
     for ing in sub.get("ingredientes", []):
         ref_id = ing.get("ref_id") or ("ins:" + ing.get("insumo_id", ""))
         total += costo_ingrediente(
-            ref_id, ing.get("cantidad", 0), ing.get("merma", 0), insumos, subrecetas
+            ref_id,
+            ing.get("cantidad", ing.get("cant_neta", 0)),
+            ing.get("merma", 0),
+            insumos, subrecetas
         )
     return total
 
@@ -55,7 +58,10 @@ def costo_ingredientes_receta(receta: dict, insumos: list, subrecetas: list) -> 
     for ing in receta.get("ingredientes", []):
         ref_id = ing.get("ref_id") or ("ins:" + ing.get("insumo_id", ""))
         total += costo_ingrediente(
-            ref_id, ing.get("cantidad", 0), ing.get("merma", 0), insumos, subrecetas
+            ref_id,
+            ing.get("cantidad", ing.get("cant_neta", 0)),
+            ing.get("merma", 0),
+            insumos, subrecetas
         )
     return total
 

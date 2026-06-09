@@ -644,16 +644,53 @@ elif current == "recetas":
                 mc3.metric("Costo total",fmt_cop(round(ct)))
                 mc4.metric("Margen",f"{m:.1f}%" if m is not None else "—")
                 if rec.get("ingredientes"):
-                    rows_ing=[]
-                    for ing in rec["ingredientes"]:
-                        ref=calc.resolve_ref(ing.get("ref_id",""),insumos,subrecetas)
-                        bruta=calc.cant_bruta(ing.get("cantidad",0),ing.get("merma",0))
-                        rows_ing.append({"Ingrediente":ref["nombre"],"Cant. neta":ing.get("cantidad",0),
-                            "Merma %":ing.get("merma",0),"Cant. bruta":round(bruta,3),
-                            "Unidad":ref["unidad"],"Costo":fmt_cop(round(ref["costo_unit"]*bruta))})
-                    st.dataframe(pd.DataFrame(rows_ing),hide_index=True,use_container_width=True)
-                if st.button(f"🗑️ Eliminar receta '{sel_r}'",type="secondary"):
-                    db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
+                    st.markdown("**✏️ Ingredientes — edita Cant. neta y Merma % directamente:**")
+                    ing_list = rec["ingredientes"]
+                    rows_ing = []
+                    for ing in ing_list:
+                        ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
+                        cant  = ing.get("cantidad", ing.get("cant_neta", 0))
+                        merma = ing.get("merma", 0)
+                        bruta = calc.cant_bruta(cant, merma)
+                        rows_ing.append({
+                            "_ref_id":    ing.get("ref_id",""),
+                            "Ingrediente": ref["nombre"],
+                            "Cant. neta":  float(cant),
+                            "Merma %":     float(merma),
+                            "Cant. bruta": round(bruta, 3),
+                            "Unidad":      ref["unidad"],
+                            "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
+                        })
+                    edited_ing = st.data_editor(
+                        pd.DataFrame(rows_ing),
+                        hide_index=True,
+                        use_container_width=True,
+                        num_rows="fixed",
+                        column_config={
+                            "_ref_id":     st.column_config.Column(disabled=True, width="small"),
+                            "Ingrediente": st.column_config.Column(disabled=True),
+                            "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f"),
+                            "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
+                            "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
+                            "Unidad":      st.column_config.Column(disabled=True),
+                            "Costo":       st.column_config.Column(disabled=True),
+                        },
+                        key=f"edit_rec_ing_{rec['id']}",
+                    )
+                    ri_c1, ri_c2 = st.columns([2,1])
+                    if ri_c1.button("💾 Guardar cantidades", type="primary", key=f"save_rec_{rec['id']}"):
+                        nuevos_ing = []
+                        for i, row in edited_ing.iterrows():
+                            nuevos_ing.append({
+                                "ref_id":    row["_ref_id"],
+                                "cantidad":  row["Cant. neta"],
+                                "cant_neta": row["Cant. neta"],
+                                "merma":     row["Merma %"],
+                            })
+                        db.update_receta(rec["id"], {"ingredientes": nuevos_ing})
+                        st.success("✅ Ingredientes actualizados"); reload()
+                    if ri_c2.button(f"🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
+                        db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -740,13 +777,51 @@ elif current == "subrecetas":
                 sub=next(s for s in subrecetas if s["nombre"]==sel_s2)
                 ct_sub=calc.costo_subreceta(sub,insumos,subrecetas); rend=sub.get("rendimiento",1) or 1
                 st.markdown(f"**Rendimiento:** {rend} {sub.get('unidad_rendimiento','')} | **Costo elaboración:** {fmt_cop(round(ct_sub))} | **Costo/unidad:** {fmt_cop(round(ct_sub/rend))}")
-                rows_si=[{"Ingrediente":calc.resolve_ref(ing.get("ref_id",""),insumos,subrecetas)["nombre"],
-                    "Cant. neta":ing.get("cantidad",0),"Merma %":ing.get("merma",0),
-                    "Cant. bruta":round(calc.cant_bruta(ing.get("cantidad",0),ing.get("merma",0)),3),
-                    "Costo":fmt_cop(round(calc.resolve_ref(ing.get("ref_id",""),insumos,subrecetas)["costo_unit"]*calc.cant_bruta(ing.get("cantidad",0),ing.get("merma",0))))}
-                    for ing in sub.get("ingredientes",[])]
-                st.dataframe(pd.DataFrame(rows_si),hide_index=True,use_container_width=True)
-                if st.button(f"🗑️ Eliminar '{sel_s2}'",type="secondary"):
+                st.markdown("**✏️ Ingredientes — edita Cant. neta y Merma % directamente:**")
+                rows_si = []
+                for ing in sub.get("ingredientes", []):
+                    ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
+                    cant  = ing.get("cantidad", ing.get("cant_neta", 0))
+                    merma = ing.get("merma", 0)
+                    bruta = calc.cant_bruta(cant, merma)
+                    rows_si.append({
+                        "_ref_id":    ing.get("ref_id",""),
+                        "Ingrediente": ref["nombre"],
+                        "Cant. neta":  float(cant),
+                        "Merma %":     float(merma),
+                        "Cant. bruta": round(bruta, 3),
+                        "Unidad":      ref.get("unidad",""),
+                        "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
+                    })
+                edited_si = st.data_editor(
+                    pd.DataFrame(rows_si),
+                    hide_index=True,
+                    use_container_width=True,
+                    num_rows="fixed",
+                    column_config={
+                        "_ref_id":     st.column_config.Column(disabled=True, width="small"),
+                        "Ingrediente": st.column_config.Column(disabled=True),
+                        "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f"),
+                        "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
+                        "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
+                        "Unidad":      st.column_config.Column(disabled=True),
+                        "Costo":       st.column_config.Column(disabled=True),
+                    },
+                    key=f"edit_sub_ing_{sub['id']}",
+                )
+                si_c1, si_c2 = st.columns([2,1])
+                if si_c1.button("💾 Guardar cantidades", type="primary", key=f"save_sub_{sub['id']}"):
+                    nuevos_si = []
+                    for i, row in edited_si.iterrows():
+                        nuevos_si.append({
+                            "ref_id":    row["_ref_id"],
+                            "cantidad":  row["Cant. neta"],
+                            "cant_neta": row["Cant. neta"],
+                            "merma":     row["Merma %"],
+                        })
+                    db.update_subreceta(sub["id"], {"ingredientes": nuevos_si})
+                    st.success("✅ Ingredientes actualizados"); reload()
+                if si_c2.button(f"🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
                     db.delete_subreceta(sub["id"]); st.warning("Eliminada"); reload()
 
 

@@ -77,6 +77,10 @@ def add_subreceta(data: dict):
     get_client().table("subrecetas").insert(data).execute()
 
 
+def update_subreceta(id: str, data: dict):
+    get_client().table("subrecetas").update(data).eq("id", id).execute()
+
+
 def delete_subreceta(id: str):
     get_client().table("subrecetas").delete().eq("id", id).execute()
 
