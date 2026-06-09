@@ -138,20 +138,30 @@ details > summary { color: #3B1A0A !important; }
 .stAlert { border-radius:10px; }
 
 /* INPUTS — texto, número, selectbox, multiselect, date, textarea */
-input, textarea,
+input, textarea {
+    background-color: #fff8f0 !important;
+    color: #3B1A0A !important;
+    border-color: #c9a87a !important;
+    font-family: 'Nunito', sans-serif !important;
+    pointer-events: all !important;
+    cursor: text !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
 [data-baseweb="input"] input,
 [data-baseweb="textarea"] textarea,
 [data-baseweb="base-input"] input {
     background-color: #fff8f0 !important;
     color: #3B1A0A !important;
-    border-color: #c9a87a !important;
-    font-family: 'Nunito', sans-serif !important;
+    border: none !important;
+    pointer-events: all !important;
+    cursor: text !important;
 }
 [data-baseweb="input"],
 [data-baseweb="base-input"],
 [data-baseweb="textarea"] {
     background-color: #fff8f0 !important;
-    border-color: #c9a87a !important;
+    border: 1px solid #c9a87a !important;
     border-radius: 8px !important;
 }
 [data-baseweb="input"]:focus-within,
@@ -159,6 +169,23 @@ input, textarea,
 [data-baseweb="textarea"]:focus-within {
     border-color: #7C4A1E !important;
     box-shadow: 0 0 0 2px rgba(124,74,30,0.25) !important;
+}
+/* NUMBER INPUT — asegurar que el campo de texto central sea clickeable */
+[data-testid="stNumberInput"] > div {
+    background-color: #fff8f0 !important;
+    border: 1px solid #c9a87a !important;
+    border-radius: 8px !important;
+}
+[data-testid="stNumberInput"] input {
+    background-color: transparent !important;
+    color: #3B1A0A !important;
+    text-align: center;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    cursor: text !important;
+    pointer-events: all !important;
+    -webkit-user-select: text !important;
+    user-select: text !important;
 }
 
 /* SELECT / DROPDOWN */
@@ -996,8 +1023,10 @@ elif current == "movimientos":
                 opts_e={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
                 sel_e=st.selectbox("Insumo *",["— Selecciona —"]+list(opts_e.keys()))
                 ec1,ec2=st.columns(2)
-                cant_e=ec1.number_input("Cantidad que entra *",min_value=0.01,step=0.5)
-                costo_e=ec2.number_input("Costo por unidad (COP, 0=mantener actual)",min_value=0.0,step=100.0)
+                cant_e=ec1.number_input("Cantidad que entra *",min_value=0.0,value=0.0,step=1.0,format="%.3f",
+                    help="Escribe la cantidad directamente o usa los botones + / −")
+                costo_e=ec2.number_input("Costo por unidad (COP, 0=mantener actual)",min_value=0.0,step=50.0,format="%.0f",
+                    help="Escribe el precio directamente o usa los botones")
                 ec3,ec4=st.columns(2)
                 fecha_e=ec3.date_input("Fecha",value=date.today()); resp_e=ec4.text_input("Responsable")
                 prov_e=st.text_input("Proveedor"); nota_e=st.text_input("Nota")
@@ -1023,7 +1052,8 @@ elif current == "movimientos":
                 opts_s2={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
                 sel_s2=st.selectbox("Insumo *",["— Selecciona —"]+list(opts_s2.keys()))
                 sc1,sc2=st.columns(2)
-                cant_s2=sc1.number_input("Cantidad que sale *",min_value=0.01,step=0.5)
+                cant_s2=sc1.number_input("Cantidad que sale *",min_value=0.0,value=0.0,step=1.0,format="%.3f",
+                    help="Escribe la cantidad directamente o usa los botones + / −")
                 fecha_s2=sc2.date_input("Fecha",value=date.today())
                 sc3,sc4=st.columns(2)
                 resp_s2=sc3.text_input("Responsable")
