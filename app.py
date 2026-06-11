@@ -42,13 +42,28 @@ h2, h3 { color: #5C2E0A !important; font-weight:700; }
 
 /* BOTONES */
 .stButton > button {
-    background-color: #7C4A1E; color: #F5EFE0; border:none;
-    border-radius:8px; font-weight:700; font-family:'Nunito',sans-serif;
-    transition: background .2s;
+    background-color: #7C4A1E !important; color: #F5EFE0 !important; border:none !important;
+    border-radius:8px !important; font-weight:700 !important; font-family:'Nunito',sans-serif !important;
+    transition: background .2s; font-size: 13px !important;
 }
-.stButton > button:hover { background-color: #5C2E0A; color:#F5EFE0; }
-.stButton > button[kind="primary"] { background-color: #3B1A0A; }
-.stButton > button[kind="secondary"] { background-color: #C17F3E; }
+.stButton > button:hover { background-color: #5C2E0A !important; color:#F5EFE0 !important; }
+.stButton > button[kind="primary"]   { background-color: #7C4A1E !important; color: #F5EFE0 !important; }
+.stButton > button[kind="secondary"] { background-color: #C17F3E !important; color: #F5EFE0 !important; }
+.stButton > button p,
+.stButton > button span,
+.stButton > button div { color: #F5EFE0 !important; font-size: 13px !important; }
+/* Download buttons */
+[data-testid="stDownloadButton"] > button {
+    background-color: #7C4A1E !important; color: #F5EFE0 !important;
+    border:none !important; border-radius:8px !important; font-weight:700 !important;
+}
+[data-testid="stDownloadButton"] > button p { color: #F5EFE0 !important; }
+/* Form submit buttons */
+[data-testid="stFormSubmitButton"] > button {
+    background-color: #7C4A1E !important; color: #F5EFE0 !important;
+    border:none !important; border-radius:8px !important; font-weight:700 !important;
+}
+[data-testid="stFormSubmitButton"] > button p { color: #F5EFE0 !important; }
 
 /* FORMULARIOS */
 .stForm { background: #fff8f0; border-radius:12px; padding:16px; border:1px solid #e8d5b7; }
@@ -824,16 +839,16 @@ elif current == "recetas":
                 mc3.metric("Costo total",fmt_cop(round(ct)))
                 mc4.metric("Margen",f"{m:.1f}%" if m is not None else "—")
                 if rec.get("ingredientes"):
-                    st.markdown("**✏️ Ingredientes — edita Cant. neta y Merma % directamente:**")
-                    ing_list = rec["ingredientes"]
-                    rows_ing = []
+                    st.markdown("**✏️ Ingredientes — doble clic en Cant. neta o Merma % para editar:**")
+                    ing_list  = rec["ingredientes"]
+                    refs_ing  = [ing.get("ref_id","") for ing in ing_list]   # guardados aparte
+                    rows_ing  = []
                     for ing in ing_list:
                         ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
                         cant  = ing.get("cantidad", ing.get("cant_neta", 0))
                         merma = ing.get("merma", 0)
                         bruta = calc.cant_bruta(cant, merma)
                         rows_ing.append({
-                            "_ref_id":    ing.get("ref_id",""),
                             "Ingrediente": ref["nombre"],
                             "Cant. neta":  float(cant),
                             "Merma %":     float(merma),
@@ -847,13 +862,12 @@ elif current == "recetas":
                         use_container_width=True,
                         num_rows="fixed",
                         column_config={
-                            "_ref_id":     st.column_config.Column(disabled=True, width="small"),
-                            "Ingrediente": st.column_config.Column(disabled=True),
+                            "Ingrediente": st.column_config.Column("Ingrediente", disabled=True, width="large"),
                             "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f"),
                             "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
                             "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
-                            "Unidad":      st.column_config.Column(disabled=True),
-                            "Costo":       st.column_config.Column(disabled=True),
+                            "Unidad":      st.column_config.Column("Unidad", disabled=True, width="small"),
+                            "Costo":       st.column_config.Column("Costo",  disabled=True, width="small"),
                         },
                         key=f"edit_rec_ing_{rec['id']}",
                     )
@@ -862,14 +876,14 @@ elif current == "recetas":
                         nuevos_ing = []
                         for i, row in edited_ing.iterrows():
                             nuevos_ing.append({
-                                "ref_id":    row["_ref_id"],
+                                "ref_id":    refs_ing[i],
                                 "cantidad":  row["Cant. neta"],
                                 "cant_neta": row["Cant. neta"],
                                 "merma":     row["Merma %"],
                             })
                         db.update_receta(rec["id"], {"ingredientes": nuevos_ing})
                         st.success("✅ Ingredientes actualizados"); reload()
-                    if ri_c2.button(f"🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
+                    if ri_c2.button("🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
                         db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
 
 
@@ -960,15 +974,16 @@ elif current == "subrecetas":
                 km1.metric("Rendimiento", f"{rend} {sub.get('unidad_rendimiento','')}")
                 km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
                 km3.metric("Costo / unidad", fmt_cop(round(ct_sub/rend)))
-                st.markdown("**✏️ Ingredientes — edita Cant. neta y Merma % directamente:**")
-                rows_si = []
-                for ing in sub.get("ingredientes", []):
+                st.markdown("**✏️ Ingredientes — doble clic en Cant. neta o Merma % para editar:**")
+                ing_list_s = sub.get("ingredientes", [])
+                refs_si    = [ing.get("ref_id","") for ing in ing_list_s]
+                rows_si    = []
+                for ing in ing_list_s:
                     ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
                     cant  = ing.get("cantidad", ing.get("cant_neta", 0))
                     merma = ing.get("merma", 0)
                     bruta = calc.cant_bruta(cant, merma)
                     rows_si.append({
-                        "_ref_id":    ing.get("ref_id",""),
                         "Ingrediente": ref["nombre"],
                         "Cant. neta":  float(cant),
                         "Merma %":     float(merma),
@@ -982,13 +997,12 @@ elif current == "subrecetas":
                     use_container_width=True,
                     num_rows="fixed",
                     column_config={
-                        "_ref_id":     st.column_config.Column(disabled=True, width="small"),
-                        "Ingrediente": st.column_config.Column(disabled=True),
+                        "Ingrediente": st.column_config.Column("Ingrediente", disabled=True, width="large"),
                         "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f"),
                         "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
                         "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
-                        "Unidad":      st.column_config.Column(disabled=True),
-                        "Costo":       st.column_config.Column(disabled=True),
+                        "Unidad":      st.column_config.Column("Unidad", disabled=True, width="small"),
+                        "Costo":       st.column_config.Column("Costo",  disabled=True, width="small"),
                     },
                     key=f"edit_sub_ing_{sub['id']}",
                 )
@@ -997,14 +1011,14 @@ elif current == "subrecetas":
                     nuevos_si = []
                     for i, row in edited_si.iterrows():
                         nuevos_si.append({
-                            "ref_id":    row["_ref_id"],
+                            "ref_id":    refs_si[i],
                             "cantidad":  row["Cant. neta"],
                             "cant_neta": row["Cant. neta"],
                             "merma":     row["Merma %"],
                         })
                     db.update_subreceta(sub["id"], {"ingredientes": nuevos_si})
                     st.success("✅ Ingredientes actualizados"); reload()
-                if si_c2.button(f"🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
+                if si_c2.button("🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
                     db.delete_subreceta(sub["id"]); st.warning("Eliminada"); reload()
 
 
