@@ -812,32 +812,33 @@ elif current == "recetas":
                 f"recetas_{hoy()}.json","application/json",use_container_width=True)
 
     with tab_list:
-        busq_r=st.text_input("🔍 Buscar receta")
-        catf=st.selectbox("Filtrar categoría",["Todas"]+CAT_RECETA,key="rcatf")
-        lista_r=[r for r in recetas if (not busq_r or busq_r.lower() in r["nombre"].lower()) and (catf=="Todas" or r.get("categoria")==catf)]
-        if not lista_r: st.info("Sin recetas.")
+        fl1, fl2 = st.columns([3,2])
+        busq_r = fl1.text_input("🔍 Buscar receta", key="busq_r")
+        catf   = fl2.selectbox("Filtrar categoría", ["Todas"]+CAT_RECETA, key="rcatf")
+        lista_r = [r for r in recetas
+                   if (not busq_r or busq_r.lower() in r["nombre"].lower())
+                   and (catf=="Todas" or r.get("categoria")==catf)]
+        if not lista_r:
+            st.info("Sin recetas.")
         else:
-            rows_r=[]
-            for r in lista_r:
-                ci=calc.costo_ingredientes_receta(r,insumos,subrecetas)
-                ct=calc.costo_receta(r,insumos,subrecetas,costos_fijos)
-                m=calc.margen_receta(r,insumos,subrecetas,costos_fijos)
-                rows_r.append({"Receta":r["nombre"],"Categoría":r.get("categoria",""),"Porciones":r.get("porciones",1),
-                    "Precio":fmt_cop(r.get("precio",0)),"Costo total":fmt_cop(round(ct)),
-                    "Margen":f"{m:.1f}%" if m is not None else "—","# Ing.":len(r.get("ingredientes",[]))})
-            st.dataframe(pd.DataFrame(rows_r),hide_index=True,use_container_width=True)
-            st.markdown("---")
-            sel_r=st.selectbox("Ver detalle / eliminar",["— Selecciona —"]+[r["nombre"] for r in lista_r])
-            if sel_r!="— Selecciona —":
-                rec=next(r for r in lista_r if r["nombre"]==sel_r)
-                ci=calc.costo_ingredientes_receta(rec,insumos,subrecetas)
-                ct=calc.costo_receta(rec,insumos,subrecetas,costos_fijos)
-                m=calc.margen_receta(rec,insumos,subrecetas,costos_fijos)
-                mc1,mc2,mc3,mc4=st.columns(4)
-                mc1.metric("Precio venta",fmt_cop(rec.get("precio",0)))
-                mc2.metric("Costo ingredientes",fmt_cop(round(ci)))
-                mc3.metric("Costo total",fmt_cop(round(ct)))
-                mc4.metric("Margen",f"{m:.1f}%" if m is not None else "—")
+            st.markdown(f"**{len(lista_r)} recetas** — haz clic en el nombre para ver el detalle")
+            # Agrupar por categoría
+            cats_presentes = sorted({r.get("categoria","Sin categoría") for r in lista_r})
+            for cat in cats_presentes:
+                recetas_cat = [r for r in lista_r if r.get("categoria","Sin categoría")==cat]
+                st.markdown(f"##### 🍽️ {cat} ({len(recetas_cat)})")
+                for rec in recetas_cat:
+                    ci = calc.costo_ingredientes_receta(rec, insumos, subrecetas)
+                    ct = calc.costo_receta(rec, insumos, subrecetas, costos_fijos)
+                    m  = calc.margen_receta(rec, insumos, subrecetas, costos_fijos)
+                    margen_txt = f"{m:.1f}%" if m is not None else "—"
+                    label = f"**{rec['nombre']}** — Precio: {fmt_cop(rec.get('precio',0))} · Costo: {fmt_cop(round(ct))} · Margen: {margen_txt}"
+                    with st.expander(label, expanded=False):
+                        mc1,mc2,mc3,mc4 = st.columns(4)
+                        mc1.metric("Precio venta",       fmt_cop(rec.get("precio",0)))
+                        mc2.metric("Costo ingredientes", fmt_cop(round(ci)))
+                        mc3.metric("Costo total",        fmt_cop(round(ct)))
+                        mc4.metric("Margen",             margen_txt)
                 if rec.get("ingredientes"):
                     st.markdown("**✏️ Ingredientes — doble clic en Cant. neta o Merma % para editar:**")
                     ing_list  = rec["ingredientes"]
@@ -959,21 +960,23 @@ elif current == "subrecetas":
     with tab_list:
         if not subrecetas: st.info("Sin sub-recetas aún.")
         else:
-            rows_s=[]
-            for s in subrecetas:
-                ct_s=calc.costo_subreceta(s,insumos,subrecetas); rend=s.get("rendimiento",1) or 1
-                rows_s.append({"Nombre":s["nombre"],"Categoría":s.get("categoria",""),
-                    "Rendimiento":f"{rend} {s.get('unidad_rendimiento','')}","Costo elaboración":fmt_cop(round(ct_s)),
-                    "Costo / unidad":fmt_cop(round(ct_s/rend)),"# Ingredientes":len(s.get("ingredientes",[]))})
-            st.dataframe(pd.DataFrame(rows_s),hide_index=True,use_container_width=True)
-            sel_s2=st.selectbox("Ver detalle / eliminar",["— Selecciona —"]+[s["nombre"] for s in subrecetas])
-            if sel_s2!="— Selecciona —":
-                sub=next(s for s in subrecetas if s["nombre"]==sel_s2)
-                ct_sub=calc.costo_subreceta(sub,insumos,subrecetas); rend=sub.get("rendimiento",1) or 1
-                km1, km2, km3 = st.columns(3)
-                km1.metric("Rendimiento", f"{rend} {sub.get('unidad_rendimiento','')}")
-                km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
-                km3.metric("Costo / unidad", fmt_cop(round(ct_sub/rend)))
+            busq_s2 = st.text_input("🔍 Buscar sub-receta", key="busq_sub")
+            lista_s2 = [s for s in subrecetas
+                        if not busq_s2 or busq_s2.lower() in s["nombre"].lower()]
+            st.markdown(f"**{len(lista_s2)} sub-recetas** — haz clic en el nombre para ver el detalle")
+            cats_sub = sorted({s.get("categoria","Sin categoría") for s in lista_s2})
+            for cat in cats_sub:
+                subs_cat = [s for s in lista_s2 if s.get("categoria","Sin categoría")==cat]
+                st.markdown(f"##### 🧪 {cat} ({len(subs_cat)})")
+                for sub in subs_cat:
+                    ct_sub = calc.costo_subreceta(sub, insumos, subrecetas)
+                    rend   = sub.get("rendimiento",1) or 1
+                    label  = f"**{sub['nombre']}** — Rend: {rend} {sub.get('unidad_rendimiento','')} · Costo: {fmt_cop(round(ct_sub))} · Costo/u: {fmt_cop(round(ct_sub/rend))}"
+                    with st.expander(label, expanded=False):
+                        km1, km2, km3 = st.columns(3)
+                        km1.metric("Rendimiento",      f"{rend} {sub.get('unidad_rendimiento','')}")
+                        km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
+                        km3.metric("Costo / unidad",    fmt_cop(round(ct_sub/rend)))
                 st.markdown("**✏️ Ingredientes — doble clic en Cant. neta o Merma % para editar:**")
                 ing_list_s = sub.get("ingredientes", [])
                 refs_si    = [ing.get("ref_id","") for ing in ing_list_s]
