@@ -1271,29 +1271,19 @@ elif current == "bajas":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "alertas":
     st.title("🔔 Alertas")
-    st.subheader("📦 Stock bajo el mínimo")
-    bajo_a=[i for i in insumos if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"]]
-    if bajo_a:
-        st.dataframe(pd.DataFrame([{"Insumo":i["nombre"],"Categoría":i.get("categoria"),
-            "Stock actual":fmt_n(i.get("stock",0)),"Mínimo":fmt_n(i.get("minimo",0)),
-            "Faltante":fmt_n(max(0,i.get("minimo",0)-i.get("stock",0))),"Unidad":i.get("unidad"),
-            "Proveedor":i.get("proveedor") or "—"} for i in bajo_a]),hide_index=True,use_container_width=True)
-    else: st.success("✅ Todo el stock sobre el mínimo")
 
-    st.markdown("---"); st.subheader("⏰ Vencimientos próximos (≤ 3 días)")
-    hoy_d=date.today(); proximos=[]
+    # ── resumen KPIs ──────────────────────────────────────────────────────────
+    bajo_a  = [i for i in insumos if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"]]
+    hoy_d   = date.today()
+    proximos_a = []
     for i in insumos:
         if not i.get("vida_util") or not i.get("ultima_entrada"): continue
         try:
             ult=date.fromisoformat(i["ultima_entrada"]); vence=ult+timedelta(days=int(i["vida_util"]))
             dias=(vence-hoy_d).days
-            if dias<=3: proximos.append({"Insumo":i["nombre"],"Vida útil":f"{i['vida_util']}d","Última entrada":str(ult),"Vence":str(vence),"Estado":"VENCIDO" if dias<0 else("HOY" if dias==0 else f"En {dias}d")})
-        except Exception: continue
-    if proximos: st.dataframe(pd.DataFrame(proximos),hide_index=True,use_container_width=True)
-    else: st.success("✅ Sin vencimientos próximos")
-
-    st.markdown("---"); st.subheader("💲 Fluctuaciones de precio")
-    flucts=[]
+            if dias<=7: proximos_a.append((i, dias, str(vence)))
+        except: continue
+    flucts_a = []
     for i in insumos:
         hist=i.get("historial_precios") or []
         if len(hist)<2: continue
@@ -1302,9 +1292,63 @@ elif current == "alertas":
             if not ant or ant<=0: continue
             pct=(act-ant)/ant*100
             if pct>=umbral_precio:
-                flucts.append({"Insumo":i["nombre"],"Precio anterior":fmt_cop(ant),"Precio nuevo":fmt_cop(act),"Variación":f"▲ {pct:.1f}%","Fecha":hist[j].get("fecha"),"Proveedor":i.get("proveedor") or "—"}); break
-    if flucts: st.warning(f"{len(flucts)} insumo(s) con aumento ≥ {umbral_precio}%"); st.dataframe(pd.DataFrame(flucts),hide_index=True,use_container_width=True)
-    else: st.success(f"✅ Sin fluctuaciones ≥ {umbral_precio}%")
+                flucts_a.append((i,ant,act,pct,hist[j].get("fecha",""))); break
+
+    ak1,ak2,ak3 = st.columns(3)
+    kpi(ak1, len(bajo_a),      "Stock bajo mínimo",    "danger" if bajo_a    else "ok")
+    kpi(ak2, len(proximos_a),  "Próximos a vencer",    "warn"   if proximos_a else "ok")
+    kpi(ak3, len(flucts_a),    "Precios con alza",     "warn"   if flucts_a   else "ok")
+    st.markdown("---")
+
+    # ── 1. STOCK BAJO ─────────────────────────────────────────────────────────
+    with st.expander(f"📦 Stock bajo el mínimo  ({len(bajo_a)} insumos)", expanded=bool(bajo_a)):
+        if not bajo_a:
+            st.success("✅ Todo el stock sobre el mínimo")
+        else:
+            # agrupar por categoría
+            cats_bajo = sorted({i.get("categoria","Otros") for i in bajo_a})
+            for cat in cats_bajo:
+                items_cat = [i for i in bajo_a if i.get("categoria","Otros")==cat]
+                st.markdown(f"**{cat}**")
+                for i in items_cat:
+                    falt = max(0, i.get("minimo",0) - i.get("stock",0))
+                    pct_stock = (i.get("stock",0)/i.get("minimo",1)*100) if i.get("minimo",0)>0 else 0
+                    color = "🔴" if pct_stock<=50 else "🟠"
+                    with st.expander(
+                        f"{color} **{i['nombre']}** — Stock: {fmt_n(i.get('stock',0))} / Mínimo: {fmt_n(i.get('minimo',0))} {i.get('unidad','')}",
+                        expanded=False
+                    ):
+                        c1,c2,c3,c4 = st.columns(4)
+                        c1.metric("Stock actual",  f"{fmt_n(i.get('stock',0))} {i.get('unidad','')}")
+                        c2.metric("Stock mínimo",  f"{fmt_n(i.get('minimo',0))} {i.get('unidad','')}")
+                        c3.metric("Faltante",      f"{fmt_n(round(falt,2))} {i.get('unidad','')}")
+                        c4.metric("Proveedor",     i.get("proveedor") or "—")
+
+    # ── 2. VENCIMIENTOS ───────────────────────────────────────────────────────
+    with st.expander(f"⏰ Vencimientos próximos ({len(proximos_a)} insumos)", expanded=bool(proximos_a)):
+        if not proximos_a:
+            st.success("✅ Sin vencimientos próximos (7 días)")
+        else:
+            for i, dias, vence in sorted(proximos_a, key=lambda x: x[1]):
+                estado = "🔴 VENCIDO" if dias<0 else ("🔴 HOY" if dias==0 else f"🟠 En {dias} día(s)")
+                with st.expander(f"{estado} — **{i['nombre']}** · Vence: {vence}", expanded=False):
+                    c1,c2,c3 = st.columns(3)
+                    c1.metric("Stock actual",   f"{fmt_n(i.get('stock',0))} {i.get('unidad','')}")
+                    c2.metric("Vida útil",      f"{i.get('vida_util',0)} días")
+                    c3.metric("Última entrada", str(i.get("ultima_entrada","—")))
+
+    # ── 3. PRECIOS ────────────────────────────────────────────────────────────
+    with st.expander(f"💲 Fluctuaciones de precio ({len(flucts_a)} insumos)", expanded=bool(flucts_a)):
+        if not flucts_a:
+            st.success(f"✅ Sin fluctuaciones ≥ {umbral_precio}%")
+        else:
+            for i, ant, act, pct, fecha in sorted(flucts_a, key=lambda x: x[3], reverse=True):
+                with st.expander(f"▲ {pct:.1f}% — **{i['nombre']}** · {fmt_cop(ant)} → {fmt_cop(act)}", expanded=False):
+                    c1,c2,c3,c4 = st.columns(4)
+                    c1.metric("Precio anterior", fmt_cop(ant))
+                    c2.metric("Precio nuevo",    fmt_cop(act))
+                    c3.metric("Variación",       f"▲ {pct:.1f}%")
+                    c4.metric("Proveedor",       i.get("proveedor") or "—")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1387,7 +1431,7 @@ elif current == "produccion":
                 st.session_state.porciones_prod[r["id"]]=val
 
             st.markdown("---"); st.subheader("📦 Insumos necesarios vs Stock")
-            necesidades={}
+            necesidades={}; subrecetas_nec={}
             for r in recetas_prod:
                 porciones=st.session_state.porciones_prod.get(r["id"],0)
                 if porciones<=0: continue
@@ -1403,12 +1447,19 @@ elif current == "produccion":
                     elif rid.startswith("sub:"):
                         sub_id=rid[4:]; sub=next((s for s in subrecetas if s["id"]==sub_id),None)
                         if sub:
-                            cant_sub=ing.get("cantidad", ing.get("cant_neta", 0))*porciones; rend=sub.get("rendimiento",1) or 1
+                            cant_sub=ing.get("cantidad", ing.get("cant_neta", 0))*porciones
+                            rend=sub.get("rendimiento",1) or 1
+                            # ── sub-recetas a preparar ──
+                            if sub_id not in subrecetas_nec:
+                                subrecetas_nec[sub_id]={"nombre":sub["nombre"],"rendimiento":rend,
+                                    "unidad":sub.get("unidad_rendimiento",""),"cantidad_necesaria":0}
+                            subrecetas_nec[sub_id]["cantidad_necesaria"]+=cant_sub
+                            # ── descomponer insumos ──
                             for s_ing in sub.get("ingredientes",[]):
                                 if s_ing.get("ref_id","").startswith("ins:"):
                                     s_ins_id=s_ing["ref_id"][4:]; s_ins=next((i for i in insumos if i["id"]==s_ins_id),None)
                                     if s_ins:
-                                        sc=calc.cant_bruta(s_ing.get("cantidad", ing.get("cant_neta", 0))*(cant_sub/rend),s_ing.get("merma",0))
+                                        sc=calc.cant_bruta(s_ing.get("cantidad", s_ing.get("cant_neta", 0))*(cant_sub/rend),s_ing.get("merma",0))
                                         if s_ins_id not in necesidades:
                                             necesidades[s_ins_id]={"nombre":s_ins["nombre"],"unidad":s_ins.get("unidad",""),"stock":s_ins.get("stock",0),"costo":s_ins.get("costo",0),"cantidad_bruta":0}
                                         necesidades[s_ins_id]["cantidad_bruta"]+=sc
@@ -1423,13 +1474,37 @@ elif current == "produccion":
                     if faltan>0: compras.append({"Insumo":d["nombre"],"Cantidad a comprar":f"{fmt_n(round(faltan,3))} {d['unidad']}","Costo estimado":fmt_cop(round(ct_comp))})
                 st.dataframe(pd.DataFrame(rows_prod),hide_index=True,use_container_width=True)
                 if compras:
-                    st.markdown("---"); st.subheader("🛒 Lista de compras")
-                    st.metric("Costo total estimado",fmt_cop(round(costo_total_comp)))
+                    st.markdown("---"); st.subheader("🛒 Insumos a COMPRAR")
+                    st.metric("Costo total estimado de compras",fmt_cop(round(costo_total_comp)))
                     df_compras=pd.DataFrame(compras)
-                    st.dataframe(df_compras,hide_index=True,use_container_width=True)
+                    for _,row in df_compras.iterrows():
+                        with st.expander(f"🛒 **{row['Insumo']}** — Comprar: {row['Cantidad a comprar']} · {row['Costo estimado']}",expanded=False):
+                            c1,c2=st.columns(2)
+                            c1.metric("Cantidad a comprar",row["Cantidad a comprar"])
+                            c2.metric("Costo estimado",row["Costo estimado"])
                     st.download_button("⬇️ Exportar lista de compras",df_compras.to_csv(index=False).encode("utf-8"),f"compras_{hoy()}.csv","text/csv",use_container_width=True)
                 else: st.success("✅ Stock suficiente para toda la producción.")
-            else: st.info("Ingresa porciones > 0 para ver la proyección.")
+
+            # ── Sub-recetas a PREPARAR ─────────────────────────────────────────
+            if subrecetas_nec:
+                st.markdown("---"); st.subheader("🧪 Sub-recetas a PREPARAR")
+                rows_sub_prep=[]
+                for sub_id,d in subrecetas_nec.items():
+                    rend=d["rendimiento"] or 1
+                    cant_nec=d["cantidad_necesaria"]
+                    tandas=cant_nec/rend
+                    rows_sub_prep.append({"Sub-receta":d["nombre"],"Rend./tanda":f"{fmt_n(rend)} {d['unidad']}",
+                        "Total necesario":f"{fmt_n(round(cant_nec,3))} {d['unidad']}","Tandas a preparar":f"{tandas:.1f}"})
+                    with st.expander(f"🧪 **{d['nombre']}** — Preparar {tandas:.1f} tanda(s) = {fmt_n(round(cant_nec,3))} {d['unidad']}",expanded=False):
+                        c1,c2,c3=st.columns(3)
+                        c1.metric("Total necesario",f"{fmt_n(round(cant_nec,3))} {d['unidad']}")
+                        c2.metric("Rendimiento por tanda",f"{fmt_n(rend)} {d['unidad']}")
+                        c3.metric("Tandas a preparar",f"{tandas:.1f}")
+                df_sub_prep=pd.DataFrame(rows_sub_prep)
+                st.download_button("⬇️ Exportar plan de sub-recetas",df_sub_prep.to_csv(index=False).encode("utf-8"),f"subrecetas_plan_{hoy()}.csv","text/csv",use_container_width=True)
+
+            if not necesidades and not subrecetas_nec:
+                st.info("Ingresa porciones > 0 para ver la proyección.")
 
         # ── SUGERIDA POR VENTAS ───────────────────────────────────────────────
         with tab_ventas:
@@ -1480,7 +1555,7 @@ elif current == "produccion":
 
                 # Insumos necesarios para la sugerencia
                 st.markdown("---"); st.subheader("📦 Insumos necesarios para esta sugerencia")
-                nec_sug={}
+                nec_sug={}; sub_nec_sug={}
                 for rid,porciones in sug_porciones.items():
                     if porciones<=0: continue
                     rec=next((r for r in recetas if r["id"]==rid),None)
@@ -1494,6 +1569,23 @@ elif current == "produccion":
                                 if ins_id not in nec_sug:
                                     nec_sug[ins_id]={"nombre":ins_obj["nombre"],"unidad":ins_obj.get("unidad",""),"stock":ins_obj.get("stock",0),"costo":ins_obj.get("costo",0),"cantidad_bruta":0}
                                 nec_sug[ins_id]["cantidad_bruta"]+=cb
+                        elif ri.startswith("sub:"):
+                            sub_id=ri[4:]; sub=next((s for s in subrecetas if s["id"]==sub_id),None)
+                            if sub:
+                                cant_sub=ing.get("cantidad", ing.get("cant_neta", 0))*porciones
+                                rend=sub.get("rendimiento",1) or 1
+                                if sub_id not in sub_nec_sug:
+                                    sub_nec_sug[sub_id]={"nombre":sub["nombre"],"rendimiento":rend,
+                                        "unidad":sub.get("unidad_rendimiento",""),"cantidad_necesaria":0}
+                                sub_nec_sug[sub_id]["cantidad_necesaria"]+=cant_sub
+                                for s_ing in sub.get("ingredientes",[]):
+                                    if s_ing.get("ref_id","").startswith("ins:"):
+                                        s_ins_id=s_ing["ref_id"][4:]; s_ins=next((i for i in insumos if i["id"]==s_ins_id),None)
+                                        if s_ins:
+                                            sc=calc.cant_bruta(s_ing.get("cantidad", s_ing.get("cant_neta", 0))*(cant_sub/rend),s_ing.get("merma",0))
+                                            if s_ins_id not in nec_sug:
+                                                nec_sug[s_ins_id]={"nombre":s_ins["nombre"],"unidad":s_ins.get("unidad",""),"stock":s_ins.get("stock",0),"costo":s_ins.get("costo",0),"cantidad_bruta":0}
+                                            nec_sug[s_ins_id]["cantidad_bruta"]+=sc
 
                 if nec_sug:
                     compras_sug=[]; costo_sug=0
@@ -1506,9 +1598,33 @@ elif current == "produccion":
                         if faltan>0: compras_sug.append({"Insumo":d["nombre"],"Cantidad":f"{fmt_n(round(faltan,3))} {d['unidad']}","Costo":fmt_cop(round(ct_c))})
                     st.dataframe(pd.DataFrame(rows_nec),hide_index=True,use_container_width=True)
                     if compras_sug:
+                        st.subheader("🛒 Insumos a COMPRAR")
                         st.metric("Costo estimado de compras",fmt_cop(round(costo_sug)))
                         df_cs=pd.DataFrame(compras_sug)
+                        for _,row in df_cs.iterrows():
+                            with st.expander(f"🛒 **{row['Insumo']}** — Comprar: {row['Cantidad']} · {row['Costo']}",expanded=False):
+                                c1,c2=st.columns(2)
+                                c1.metric("Cantidad a comprar",row["Cantidad"])
+                                c2.metric("Costo estimado",row["Costo"])
                         st.download_button("⬇️ Exportar lista de compras",df_cs.to_csv(index=False).encode("utf-8"),f"compras_sugeridas_{hoy()}.csv","text/csv",use_container_width=True)
+
+                # ── Sub-recetas a PREPARAR (sugeridas) ───────────────────────
+                if sub_nec_sug:
+                    st.markdown("---"); st.subheader("🧪 Sub-recetas a PREPARAR")
+                    rows_sp=[]
+                    for sub_id,d in sub_nec_sug.items():
+                        rend=d["rendimiento"] or 1
+                        cant_nec=d["cantidad_necesaria"]
+                        tandas=cant_nec/rend
+                        rows_sp.append({"Sub-receta":d["nombre"],"Rend./tanda":f"{fmt_n(rend)} {d['unidad']}",
+                            "Total necesario":f"{fmt_n(round(cant_nec,3))} {d['unidad']}","Tandas a preparar":f"{tandas:.1f}"})
+                        with st.expander(f"🧪 **{d['nombre']}** — Preparar {tandas:.1f} tanda(s) = {fmt_n(round(cant_nec,3))} {d['unidad']}",expanded=False):
+                            c1,c2,c3=st.columns(3)
+                            c1.metric("Total necesario",f"{fmt_n(round(cant_nec,3))} {d['unidad']}")
+                            c2.metric("Rendimiento por tanda",f"{fmt_n(rend)} {d['unidad']}")
+                            c3.metric("Tandas a preparar",f"{tandas:.1f}")
+                    df_sp=pd.DataFrame(rows_sp)
+                    st.download_button("⬇️ Exportar plan de sub-recetas",df_sp.to_csv(index=False).encode("utf-8"),f"subrecetas_sugeridas_{hoy()}.csv","text/csv",use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
