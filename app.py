@@ -827,6 +827,14 @@ elif current == "recetas":
             for cat in cats_presentes:
                 recetas_cat = [r for r in lista_r if r.get("categoria","Sin categoría")==cat]
                 st.markdown(f"##### 🍽️ {cat} ({len(recetas_cat)})")
+                # mapa nombre→ref_id para el selector de ingredientes
+                opts_rec = {}
+                for _ins in insumos:
+                    opts_rec[_ins["nombre"]] = f"ins:{_ins['id']}"
+                for _sub in subrecetas:
+                    opts_rec[f"🧪 {_sub['nombre']}"] = f"sub:{_sub['id']}"
+                opts_names_rec = list(opts_rec.keys())
+
                 for rec in recetas_cat:
                     ci = calc.costo_ingredientes_receta(rec, insumos, subrecetas)
                     ct = calc.costo_receta(rec, insumos, subrecetas, costos_fijos)
@@ -839,53 +847,59 @@ elif current == "recetas":
                         mc2.metric("Costo ingredientes", fmt_cop(round(ci)))
                         mc3.metric("Costo total",        fmt_cop(round(ct)))
                         mc4.metric("Margen",             margen_txt)
-                if rec.get("ingredientes"):
-                    st.markdown("**✏️ Ingredientes — doble clic en Cant. neta o Merma % para editar:**")
-                    ing_list  = rec["ingredientes"]
-                    refs_ing  = [ing.get("ref_id","") for ing in ing_list]   # guardados aparte
-                    rows_ing  = []
-                    for ing in ing_list:
-                        ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
-                        cant  = ing.get("cantidad", ing.get("cant_neta", 0))
-                        merma = ing.get("merma", 0)
-                        bruta = calc.cant_bruta(cant, merma)
-                        rows_ing.append({
-                            "Ingrediente": ref["nombre"],
-                            "Cant. neta":  float(cant),
-                            "Merma %":     float(merma),
-                            "Cant. bruta": round(bruta, 3),
-                            "Unidad":      ref["unidad"],
-                            "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
-                        })
-                    edited_ing = st.data_editor(
-                        pd.DataFrame(rows_ing),
-                        hide_index=True,
-                        use_container_width=True,
-                        num_rows="fixed",
-                        column_config={
-                            "Ingrediente": st.column_config.Column("Ingrediente", disabled=True, width="large"),
-                            "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f"),
-                            "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
-                            "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
-                            "Unidad":      st.column_config.Column("Unidad", disabled=True, width="small"),
-                            "Costo":       st.column_config.Column("Costo",  disabled=True, width="small"),
-                        },
-                        key=f"edit_rec_ing_{rec['id']}",
-                    )
-                    ri_c1, ri_c2 = st.columns([2,1])
-                    if ri_c1.button("💾 Guardar cantidades", type="primary", key=f"save_rec_{rec['id']}"):
-                        nuevos_ing = []
-                        for i, row in edited_ing.iterrows():
-                            nuevos_ing.append({
-                                "ref_id":    refs_ing[i],
-                                "cantidad":  row["Cant. neta"],
-                                "cant_neta": row["Cant. neta"],
-                                "merma":     row["Merma %"],
+
+                        # ── editor de ingredientes ──────────────────────────
+                        st.markdown("**✏️ Ingredientes** — edita cantidades, merma, cambia o agrega ingredientes:")
+                        ing_list = rec.get("ingredientes", [])
+                        rows_ing = []
+                        for ing in ing_list:
+                            ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
+                            cant  = ing.get("cantidad", ing.get("cant_neta", 0))
+                            merma = ing.get("merma", 0)
+                            bruta = calc.cant_bruta(cant, merma)
+                            rid   = ing.get("ref_id","")
+                            disp  = next((k for k,v in opts_rec.items() if v==rid), ref["nombre"])
+                            rows_ing.append({
+                                "Ingrediente": disp,
+                                "Cant. neta":  float(cant),
+                                "Merma %":     float(merma),
+                                "Cant. bruta": round(bruta, 3),
+                                "Unidad":      ref["unidad"],
+                                "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
                             })
-                        db.update_receta(rec["id"], {"ingredientes": nuevos_ing})
-                        st.success("✅ Ingredientes actualizados"); reload()
-                    if ri_c2.button("🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
-                        db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
+                        edited_ing = st.data_editor(
+                            pd.DataFrame(rows_ing) if rows_ing else pd.DataFrame(columns=["Ingrediente","Cant. neta","Merma %","Cant. bruta","Unidad","Costo"]),
+                            hide_index=True,
+                            use_container_width=True,
+                            num_rows="dynamic",
+                            column_config={
+                                "Ingrediente": st.column_config.SelectboxColumn("Ingrediente", options=opts_names_rec, required=True, width="large"),
+                                "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f", min_value=0),
+                                "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
+                                "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
+                                "Unidad":      st.column_config.Column("Unidad", disabled=True, width="small"),
+                                "Costo":       st.column_config.Column("Costo",  disabled=True, width="small"),
+                            },
+                            key=f"edit_rec_ing_{rec['id']}",
+                        )
+                        ri_c1, ri_c2 = st.columns([2,1])
+                        if ri_c1.button("💾 Guardar ingredientes", type="primary", key=f"save_rec_{rec['id']}"):
+                            nuevos_ing = []
+                            for _, row in edited_ing.iterrows():
+                                nombre_sel = row.get("Ingrediente","")
+                                if not nombre_sel: continue
+                                ref_id = opts_rec.get(nombre_sel, "")
+                                if not ref_id: continue
+                                nuevos_ing.append({
+                                    "ref_id":    ref_id,
+                                    "cantidad":  float(row["Cant. neta"] or 0),
+                                    "cant_neta": float(row["Cant. neta"] or 0),
+                                    "merma":     float(row["Merma %"] or 0),
+                                })
+                            db.update_receta(rec["id"], {"ingredientes": nuevos_ing})
+                            st.success("✅ Ingredientes actualizados"); reload()
+                        if ri_c2.button("🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
+                            db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -964,6 +978,12 @@ elif current == "subrecetas":
             lista_s2 = [s for s in subrecetas
                         if not busq_s2 or busq_s2.lower() in s["nombre"].lower()]
             st.markdown(f"**{len(lista_s2)} sub-recetas** — haz clic en el nombre para ver el detalle")
+            # mapa nombre→ref_id para selector de sub-recetas
+            opts_sub = {}
+            for _ins in insumos:
+                opts_sub[_ins["nombre"]] = f"ins:{_ins['id']}"
+            opts_names_sub = list(opts_sub.keys())
+
             cats_sub = sorted({s.get("categoria","Sin categoría") for s in lista_s2})
             for cat in cats_sub:
                 subs_cat = [s for s in lista_s2 if s.get("categoria","Sin categoría")==cat]
@@ -974,55 +994,62 @@ elif current == "subrecetas":
                     label  = f"**{sub['nombre']}** — Rend: {rend} {sub.get('unidad_rendimiento','')} · Costo: {fmt_cop(round(ct_sub))} · Costo/u: {fmt_cop(round(ct_sub/rend))}"
                     with st.expander(label, expanded=False):
                         km1, km2, km3 = st.columns(3)
-                        km1.metric("Rendimiento",      f"{rend} {sub.get('unidad_rendimiento','')}")
+                        km1.metric("Rendimiento",       f"{rend} {sub.get('unidad_rendimiento','')}")
                         km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
                         km3.metric("Costo / unidad",    fmt_cop(round(ct_sub/rend)))
-                st.markdown("**✏️ Ingredientes — doble clic en Cant. neta o Merma % para editar:**")
-                ing_list_s = sub.get("ingredientes", [])
-                refs_si    = [ing.get("ref_id","") for ing in ing_list_s]
-                rows_si    = []
-                for ing in ing_list_s:
-                    ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
-                    cant  = ing.get("cantidad", ing.get("cant_neta", 0))
-                    merma = ing.get("merma", 0)
-                    bruta = calc.cant_bruta(cant, merma)
-                    rows_si.append({
-                        "Ingrediente": ref["nombre"],
-                        "Cant. neta":  float(cant),
-                        "Merma %":     float(merma),
-                        "Cant. bruta": round(bruta, 3),
-                        "Unidad":      ref.get("unidad",""),
-                        "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
-                    })
-                edited_si = st.data_editor(
-                    pd.DataFrame(rows_si),
-                    hide_index=True,
-                    use_container_width=True,
-                    num_rows="fixed",
-                    column_config={
-                        "Ingrediente": st.column_config.Column("Ingrediente", disabled=True, width="large"),
-                        "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f"),
-                        "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
-                        "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
-                        "Unidad":      st.column_config.Column("Unidad", disabled=True, width="small"),
-                        "Costo":       st.column_config.Column("Costo",  disabled=True, width="small"),
-                    },
-                    key=f"edit_sub_ing_{sub['id']}",
-                )
-                si_c1, si_c2 = st.columns([2,1])
-                if si_c1.button("💾 Guardar cantidades", type="primary", key=f"save_sub_{sub['id']}"):
-                    nuevos_si = []
-                    for i, row in edited_si.iterrows():
-                        nuevos_si.append({
-                            "ref_id":    refs_si[i],
-                            "cantidad":  row["Cant. neta"],
-                            "cant_neta": row["Cant. neta"],
-                            "merma":     row["Merma %"],
-                        })
-                    db.update_subreceta(sub["id"], {"ingredientes": nuevos_si})
-                    st.success("✅ Ingredientes actualizados"); reload()
-                if si_c2.button("🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
-                    db.delete_subreceta(sub["id"]); st.warning("Eliminada"); reload()
+
+                        # ── editor de ingredientes ──────────────────────────
+                        st.markdown("**✏️ Ingredientes** — edita cantidades, merma, cambia o agrega ingredientes:")
+                        ing_list_s = sub.get("ingredientes", [])
+                        rows_si = []
+                        for ing in ing_list_s:
+                            ref   = calc.resolve_ref(ing.get("ref_id",""), insumos, subrecetas)
+                            cant  = ing.get("cantidad", ing.get("cant_neta", 0))
+                            merma = ing.get("merma", 0)
+                            bruta = calc.cant_bruta(cant, merma)
+                            rid   = ing.get("ref_id","")
+                            disp  = next((k for k,v in opts_sub.items() if v==rid), ref["nombre"])
+                            rows_si.append({
+                                "Ingrediente": disp,
+                                "Cant. neta":  float(cant),
+                                "Merma %":     float(merma),
+                                "Cant. bruta": round(bruta, 3),
+                                "Unidad":      ref.get("unidad",""),
+                                "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
+                            })
+                        edited_si = st.data_editor(
+                            pd.DataFrame(rows_si) if rows_si else pd.DataFrame(columns=["Ingrediente","Cant. neta","Merma %","Cant. bruta","Unidad","Costo"]),
+                            hide_index=True,
+                            use_container_width=True,
+                            num_rows="dynamic",
+                            column_config={
+                                "Ingrediente": st.column_config.SelectboxColumn("Ingrediente", options=opts_names_sub, required=True, width="large"),
+                                "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f", min_value=0),
+                                "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
+                                "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),
+                                "Unidad":      st.column_config.Column("Unidad", disabled=True, width="small"),
+                                "Costo":       st.column_config.Column("Costo",  disabled=True, width="small"),
+                            },
+                            key=f"edit_sub_ing_{sub['id']}",
+                        )
+                        si_c1, si_c2 = st.columns([2,1])
+                        if si_c1.button("💾 Guardar ingredientes", type="primary", key=f"save_sub_{sub['id']}"):
+                            nuevos_si = []
+                            for _, row in edited_si.iterrows():
+                                nombre_sel = row.get("Ingrediente","")
+                                if not nombre_sel: continue
+                                ref_id = opts_sub.get(nombre_sel, "")
+                                if not ref_id: continue
+                                nuevos_si.append({
+                                    "ref_id":    ref_id,
+                                    "cantidad":  float(row["Cant. neta"] or 0),
+                                    "cant_neta": float(row["Cant. neta"] or 0),
+                                    "merma":     float(row["Merma %"] or 0),
+                                })
+                            db.update_subreceta(sub["id"], {"ingredientes": nuevos_si})
+                            st.success("✅ Ingredientes actualizados"); reload()
+                        if si_c2.button("🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
+                            db.delete_subreceta(sub["id"]); st.warning("Eliminada"); reload()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
