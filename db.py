@@ -106,6 +106,14 @@ def add_movimiento(data: dict):
     get_client().table("movimientos").insert(data).execute()
 
 
+def update_movimiento(id: str, data: dict):
+    get_client().table("movimientos").update(data).eq("id", id).execute()
+
+
+def delete_movimiento(id: str):
+    get_client().table("movimientos").delete().eq("id", id).execute()
+
+
 # ── BAJAS ─────────────────────────────────────────────────────────────────────
 
 def get_bajas():

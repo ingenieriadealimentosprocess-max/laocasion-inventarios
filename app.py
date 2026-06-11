@@ -1165,22 +1165,83 @@ elif current == "movimientos":
                         st.success(f"✅ Venta: {cant_v} × **{rec_v2['nombre']}**"); reload()
 
     with tab_hist:
-        st.subheader("Historial")
-        hc1,hc2,hc3=st.columns(3)
-        busq_m=hc1.text_input("🔍 Buscar")
-        ftipo=hc2.selectbox("Tipo",["Todos","entrada","salida","venta","baja"])
-        ffecha=hc3.date_input("Fecha",value=None)
-        lista_m=movs
-        if busq_m: lista_m=[m for m in lista_m if busq_m.lower() in (m.get("nombre") or "").lower()]
-        if ftipo!="Todos": lista_m=[m for m in lista_m if m.get("tipo")==ftipo]
-        if ffecha: lista_m=[m for m in lista_m if m.get("fecha")==str(ffecha)]
+        st.subheader("Historial de movimientos")
+        hc1,hc2,hc3,hc4=st.columns([2,1,1,1])
+        busq_m  = hc1.text_input("🔍 Buscar insumo / plato")
+        ftipo   = hc2.selectbox("Tipo",["Todos","entrada","salida","venta","baja"])
+        ffecha  = hc3.date_input("Fecha exacta", value=None)
+        max_filas = hc4.number_input("Mostrar", min_value=10, max_value=500, value=50, step=10)
+
+        lista_m = movs
+        if busq_m:  lista_m = [m for m in lista_m if busq_m.lower() in (m.get("nombre") or "").lower()]
+        if ftipo != "Todos": lista_m = [m for m in lista_m if m.get("tipo") == ftipo]
+        if ffecha:  lista_m = [m for m in lista_m if m.get("fecha") == str(ffecha)]
+
+        st.caption(f"{len(lista_m)} movimientos encontrados — mostrando {min(len(lista_m), int(max_filas))}")
+
         if lista_m:
-            df_mh=pd.DataFrame([{"Fecha":m.get("fecha"),"Tipo":m.get("tipo"),"Insumo/Plato":m.get("nombre") or "—",
-                "Cantidad":m.get("cantidad"),"Costo unit.":fmt_cop(m.get("costo_unit")),"Responsable":m.get("responsable") or "—",
-                "Nota":m.get("nota") or "—"} for m in lista_m[:500]])
-            st.dataframe(df_mh,hide_index=True,use_container_width=True)
-            st.download_button("⬇️ Exportar CSV",df_mh.to_csv(index=False).encode("utf-8"),f"movimientos_{hoy()}.csv","text/csv")
-        else: st.info("Sin movimientos en este filtro.")
+            # Export siempre disponible
+            df_mh = pd.DataFrame([{
+                "Fecha":m.get("fecha"),"Tipo":m.get("tipo"),
+                "Insumo/Plato":m.get("nombre") or "—",
+                "Cantidad":m.get("cantidad"),"Costo unit.":fmt_cop(m.get("costo_unit")),
+                "Responsable":m.get("responsable") or "—","Nota":m.get("nota") or "—"
+            } for m in lista_m])
+            st.download_button("⬇️ Exportar CSV", df_mh.to_csv(index=False).encode("utf-8"),
+                               f"movimientos_{hoy()}.csv", "text/csv", use_container_width=True)
+            st.markdown("---")
+
+            TIPO_ICON = {"entrada":"📥","salida":"📤","venta":"🍽️","baja":"🗑️"}
+            for mov in lista_m[:int(max_filas)]:
+                icono = TIPO_ICON.get(mov.get("tipo",""), "•")
+                lbl   = (f"{icono} **{mov.get('fecha','')}** · {mov.get('tipo','').upper()} · "
+                         f"**{mov.get('nombre','—')}** · {fmt_n(mov.get('cantidad',0))} "
+                         f"· {mov.get('responsable','—')}")
+                with st.expander(lbl, expanded=False):
+                    ec1,ec2,ec3,ec4 = st.columns(4)
+                    ec1.metric("Tipo",        mov.get("tipo","—").upper())
+                    ec2.metric("Cantidad",    fmt_n(mov.get("cantidad",0)))
+                    ec3.metric("Costo unit.", fmt_cop(mov.get("costo_unit",0)))
+                    ec4.metric("Fecha",       mov.get("fecha","—"))
+
+                    st.markdown("**✏️ Editar datos del movimiento** *(nota, fecha, responsable)*")
+                    mid = mov["id"]
+                    ef1,ef2 = st.columns(2)
+                    new_fecha = ef1.date_input("Fecha", value=date.fromisoformat(mov["fecha"]) if mov.get("fecha") else date.today(), key=f"mf_{mid}")
+                    new_resp  = ef2.text_input("Responsable", value=mov.get("responsable",""), key=f"mr_{mid}")
+                    new_nota  = st.text_input("Nota", value=mov.get("nota",""), key=f"mn_{mid}")
+
+                    btn_c1, btn_c2 = st.columns([2,1])
+                    if btn_c1.button("💾 Guardar cambios", key=f"msave_{mid}", type="primary"):
+                        db.update_movimiento(mid, {"fecha": str(new_fecha), "responsable": new_resp, "nota": new_nota})
+                        st.success("✅ Movimiento actualizado"); reload()
+
+                    if btn_c2.button("🗑️ Eliminar y revertir stock", key=f"mdel_{mid}", type="secondary"):
+                        tipo_m = mov.get("tipo")
+                        cant_m = mov.get("cantidad", 0)
+                        # ── revertir stock según tipo ─────────────────────
+                        if tipo_m == "entrada":
+                            ins_obj = next((i for i in insumos if i["id"] == mov.get("insumo_id")), None)
+                            if ins_obj:
+                                db.update_insumo(ins_obj["id"], {"stock": max(0, ins_obj.get("stock",0) - cant_m)})
+                        elif tipo_m == "salida":
+                            ins_obj = next((i for i in insumos if i["id"] == mov.get("insumo_id")), None)
+                            if ins_obj:
+                                db.update_insumo(ins_obj["id"], {"stock": ins_obj.get("stock",0) + cant_m})
+                        elif tipo_m == "venta":
+                            rec_v = next((r for r in recetas if r["id"] == mov.get("receta_id")), None)
+                            if rec_v:
+                                for ing in rec_v.get("ingredientes",[]):
+                                    if ing.get("ref_id","").startswith("ins:"):
+                                        ins_id = ing["ref_id"][4:]
+                                        ins_obj = next((i for i in insumos if i["id"] == ins_id), None)
+                                        if ins_obj:
+                                            devolver = calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta",0)) * cant_m, ing.get("merma",0))
+                                            db.update_insumo(ins_id, {"stock": ins_obj.get("stock",0) + devolver})
+                        db.delete_movimiento(mid)
+                        st.warning("🗑️ Movimiento eliminado y stock revertido"); reload()
+        else:
+            st.info("Sin movimientos en este filtro.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
