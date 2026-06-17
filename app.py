@@ -1060,61 +1060,94 @@ elif current == "movimientos":
     tab_e,tab_s,tab_v,tab_hist=st.tabs(["📥 Entrada","📤 Salida","🍽️ Venta / Despacho","📋 Historial"])
 
     with tab_e:
-        st.subheader("Registrar entrada de insumo")
-        if not insumos: st.warning("No hay insumos.")
+        st.subheader("Registrar entrada")
+        tipo_e=st.radio("Tipo de ítem",["🥚 Insumo (materia prima)","🧪 Sub-receta / Elaboración","🍽️ Producto terminado"],
+                        horizontal=True,key="radio_tipo_e")
+        _te="insumo" if "Insumo" in tipo_e else "subreceta" if "Sub-receta" in tipo_e else "producto"
+        if _te=="insumo":
+            cat_e={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
+        elif _te=="subreceta":
+            cat_e={f"{s['nombre']} — {s.get('categoria','')} | stock: {fmt_n(s.get('stock') or 0)}":s for s in subrecetas}
+        else:
+            cat_e={f"{r['nombre']} — {r.get('categoria','')} | stock: {fmt_n(r.get('stock') or 0)}":r for r in recetas}
+        if not cat_e:
+            st.warning("No hay ítems de este tipo registrados.")
         else:
             with st.form("form_entrada",clear_on_submit=True):
-                opts_e={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
-                sel_e=st.selectbox("Insumo *",["— Selecciona —"]+list(opts_e.keys()))
+                sel_e=st.selectbox("Ítem *",["— Selecciona —"]+list(cat_e.keys()))
                 ec1,ec2=st.columns(2)
-                cant_e=ec1.number_input("Cantidad que entra *",min_value=0.0,value=0.0,step=1.0,format="%.3f",
-                    help="Escribe la cantidad directamente o usa los botones + / −")
-                costo_e=ec2.number_input("Costo por unidad (COP, 0=mantener actual)",min_value=0.0,step=50.0,format="%.0f",
-                    help="Escribe el precio directamente o usa los botones")
+                cant_e=ec1.number_input("Cantidad que entra *",min_value=0.0,value=0.0,step=1.0,format="%.3f")
+                costo_e=ec2.number_input("Costo/unidad (COP, 0=mantener)",min_value=0.0,step=50.0,format="%.0f")
                 ec3,ec4=st.columns(2)
                 fecha_e=ec3.date_input("Fecha",value=date.today()); resp_e=ec4.text_input("Responsable")
                 prov_e=st.text_input("Proveedor"); nota_e=st.text_input("Nota")
                 if st.form_submit_button("✅ Registrar entrada",use_container_width=True,type="primary"):
-                    if sel_e=="— Selecciona —": st.error("Selecciona un insumo")
+                    if sel_e=="— Selecciona —": st.error("Selecciona un ítem")
+                    elif cant_e<=0: st.error("Ingresa una cantidad mayor a 0")
                     else:
-                        ins_e=opts_e[sel_e]; nc=costo_e if costo_e>0 else ins_e.get("costo",0)
-                        upd={"stock":ins_e.get("stock",0)+cant_e,"ultima_entrada":str(fecha_e)}
-                        if costo_e>0 and costo_e!=ins_e.get("costo",0):
-                            hist=ins_e.get("historial_precios") or []
-                            hist.append({"fecha":str(fecha_e),"precio":costo_e,"precio_anterior":ins_e.get("costo",0)})
-                            upd["costo"]=costo_e; upd["historial_precios"]=hist
-                        db.update_insumo(ins_e["id"],upd)
-                        db.add_movimiento({"tipo":"entrada","insumo_id":ins_e["id"],"nombre":ins_e["nombre"],
-                            "cantidad":cant_e,"costo_unit":nc,"fecha":str(fecha_e),"responsable":resp_e or "—","nota":nota_e,"proveedor":prov_e})
-                        st.success(f"✅ +{fmt_n(cant_e)} {ins_e.get('unidad','')} de **{ins_e['nombre']}** → Stock nuevo: **{fmt_n(ins_e.get('stock',0)+cant_e)}**"); reload()
+                        item_e=cat_e[sel_e]; nc=costo_e if costo_e>0 else item_e.get("costo",0)
+                        if _te=="insumo":
+                            upd={"stock":item_e.get("stock",0)+cant_e,"ultima_entrada":str(fecha_e)}
+                            if costo_e>0 and costo_e!=item_e.get("costo",0):
+                                hist=item_e.get("historial_precios") or []
+                                hist.append({"fecha":str(fecha_e),"precio":costo_e,"precio_anterior":item_e.get("costo",0)})
+                                upd["costo"]=costo_e; upd["historial_precios"]=hist
+                            db.update_insumo(item_e["id"],upd)
+                        elif _te=="subreceta":
+                            try: db.update_subreceta(item_e["id"],{"stock":(item_e.get("stock") or 0)+cant_e})
+                            except: pass
+                        else:
+                            try: db.update_receta(item_e["id"],{"stock":(item_e.get("stock") or 0)+cant_e})
+                            except: pass
+                        db.add_movimiento({"tipo":"entrada","insumo_id":item_e["id"],"nombre":item_e["nombre"],
+                            "cantidad":cant_e,"costo_unit":nc,"fecha":str(fecha_e),
+                            "responsable":resp_e or "—","nota":f"[{_te}] {nota_e}".strip(),"proveedor":prov_e})
+                        unidad_e=item_e.get("unidad","und")
+                        st.success(f"✅ +{fmt_n(cant_e)} {unidad_e} de **{item_e['nombre']}**"); reload()
 
     with tab_s:
-        st.subheader("Registrar salida de insumo")
-        if not insumos: st.warning("No hay insumos.")
+        st.subheader("Registrar salida")
+        tipo_s=st.radio("Tipo de ítem",["🥚 Insumo (materia prima)","🧪 Sub-receta / Elaboración","🍽️ Producto terminado"],
+                        horizontal=True,key="radio_tipo_s")
+        _ts="insumo" if "Insumo" in tipo_s else "subreceta" if "Sub-receta" in tipo_s else "producto"
+        if _ts=="insumo":
+            cat_s2={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
+        elif _ts=="subreceta":
+            cat_s2={f"{s['nombre']} — {s.get('categoria','')} | stock: {fmt_n(s.get('stock') or 0)}":s for s in subrecetas}
+        else:
+            cat_s2={f"{r['nombre']} — {r.get('categoria','')} | stock: {fmt_n(r.get('stock') or 0)}":r for r in recetas}
+        if not cat_s2:
+            st.warning("No hay ítems de este tipo registrados.")
         else:
             with st.form("form_salida",clear_on_submit=True):
-                opts_s2={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
-                sel_s2=st.selectbox("Insumo *",["— Selecciona —"]+list(opts_s2.keys()))
+                sel_s2=st.selectbox("Ítem *",["— Selecciona —"]+list(cat_s2.keys()))
                 sc1,sc2=st.columns(2)
-                cant_s2=sc1.number_input("Cantidad que sale *",min_value=0.0,value=0.0,step=1.0,format="%.3f",
-                    help="Escribe la cantidad directamente o usa los botones + / −")
+                cant_s2=sc1.number_input("Cantidad que sale *",min_value=0.0,value=0.0,step=1.0,format="%.3f")
                 fecha_s2=sc2.date_input("Fecha",value=date.today())
                 sc3,sc4=st.columns(2)
                 resp_s2=sc3.text_input("Responsable")
                 motivo_s=sc4.selectbox("Motivo",["Consumo cocina","Merma","Transferencia","Otro"])
                 nota_s2=st.text_input("Nota adicional")
                 if st.form_submit_button("✅ Registrar salida",use_container_width=True,type="primary"):
-                    if sel_s2=="— Selecciona —": st.error("Selecciona un insumo")
+                    if sel_s2=="— Selecciona —": st.error("Selecciona un ítem")
+                    elif cant_s2<=0: st.error("Ingresa una cantidad mayor a 0")
                     else:
-                        ins_s2=opts_s2[sel_s2]
-                        if cant_s2>ins_s2.get("stock",0): st.error(f"Stock insuficiente: {fmt_n(ins_s2.get('stock',0))}")
+                        ins_s2=cat_s2[sel_s2]; stk=ins_s2.get("stock") or 0
+                        if cant_s2>stk: st.error(f"Stock insuficiente: {fmt_n(stk)} {ins_s2.get('unidad','und')}")
                         else:
-                            ns=ins_s2.get("stock",0)-cant_s2
-                            db.update_insumo(ins_s2["id"],{"stock":ns})
+                            ns=stk-cant_s2
+                            if _ts=="insumo": db.update_insumo(ins_s2["id"],{"stock":ns})
+                            elif _ts=="subreceta":
+                                try: db.update_subreceta(ins_s2["id"],{"stock":ns})
+                                except: pass
+                            else:
+                                try: db.update_receta(ins_s2["id"],{"stock":ns})
+                                except: pass
                             db.add_movimiento({"tipo":"salida","insumo_id":ins_s2["id"],"nombre":ins_s2["nombre"],
                                 "cantidad":cant_s2,"costo_unit":ins_s2.get("costo",0),"fecha":str(fecha_s2),
-                                "responsable":resp_s2 or "—","nota":f"{motivo_s} · {nota_s2}".strip(" ·")})
-                            st.success(f"✅ -{fmt_n(cant_s2)} {ins_s2.get('unidad','')} de **{ins_s2['nombre']}** → Stock nuevo: **{fmt_n(ns)}**"); reload()
+                                "responsable":resp_s2 or "—","nota":f"[{_ts}] {motivo_s} · {nota_s2}".strip(" ·")})
+                            unidad_s=ins_s2.get("unidad","und")
+                            st.success(f"✅ -{fmt_n(cant_s2)} {unidad_s} de **{ins_s2['nombre']}** → Stock nuevo: **{fmt_n(ns)}**"); reload()
 
     with tab_v:
         st.subheader("Registrar venta / despacho de plato")
@@ -1307,11 +1340,20 @@ elif current == "bajas":
     st.title("🗑️ Control de Bajas")
     tab_reg,tab_hist=st.tabs(["➕ Registrar baja","📋 Historial y resumen"])
     with tab_reg:
-        if not insumos: st.warning("Sin insumos.")
+        tipo_b=st.radio("Tipo de ítem",["🥚 Insumo (materia prima)","🧪 Sub-receta / Elaboración","🍽️ Producto terminado"],
+                        horizontal=True,key="radio_tipo_b")
+        _tb="insumo" if "Insumo" in tipo_b else "subreceta" if "Sub-receta" in tipo_b else "producto"
+        if _tb=="insumo":
+            cat_b={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
+        elif _tb=="subreceta":
+            cat_b={f"{s['nombre']} — {s.get('categoria','')} | stock: {fmt_n(s.get('stock') or 0)}":s for s in subrecetas}
+        else:
+            cat_b={f"{r['nombre']} — {r.get('categoria','')} | stock: {fmt_n(r.get('stock') or 0)}":r for r in recetas}
+        if not cat_b:
+            st.warning("No hay ítems de este tipo registrados.")
         else:
             with st.form("form_baja",clear_on_submit=True):
-                opts_b={f"{i['nombre']} — stock: {fmt_n(i.get('stock',0))} {i.get('unidad','')}":i for i in insumos}
-                sel_b=st.selectbox("Insumo *",["— Selecciona —"]+list(opts_b.keys()))
+                sel_b=st.selectbox("Ítem *",["— Selecciona —"]+list(cat_b.keys()))
                 bc1,bc2=st.columns(2)
                 cant_b=bc1.number_input("Cantidad *",min_value=0.01,step=0.5)
                 fecha_b=bc2.date_input("Fecha",value=date.today())
@@ -1321,20 +1363,29 @@ elif current == "bajas":
                 resp_b=bc5.text_input("Responsable"); autor_b=bc6.text_input("Autoriza")
                 accion_b=st.text_input("Acción correctiva")
                 if st.form_submit_button("✅ Registrar baja",use_container_width=True,type="primary"):
-                    if sel_b=="— Selecciona —": st.error("Selecciona un insumo")
+                    if sel_b=="— Selecciona —": st.error("Selecciona un ítem")
                     else:
-                        ins_b=opts_b[sel_b]
-                        if cant_b>ins_b.get("stock",0): st.error(f"Stock insuficiente: {fmt_n(ins_b.get('stock',0))}")
+                        item_b=cat_b[sel_b]; stk_b=item_b.get("stock") or 0
+                        if cant_b>stk_b: st.error(f"Stock insuficiente: {fmt_n(stk_b)} {item_b.get('unidad','und')}")
                         else:
-                            ct_b=ins_b.get("costo",0)*cant_b
-                            db.update_insumo(ins_b["id"],{"stock":ins_b.get("stock",0)-cant_b})
-                            db.add_baja({"insumo_id":ins_b["id"],"nombre":ins_b["nombre"],"unidad":ins_b.get("unidad",""),
-                                "cantidad":cant_b,"costo_unit":ins_b.get("costo",0),"costo_total":ct_b,"causa":causa_b,
-                                "turno":turno_b,"fecha":str(fecha_b),"responsable":resp_b or "—","autoriza":autor_b or "—","accion":accion_b})
-                            db.add_movimiento({"tipo":"baja","insumo_id":ins_b["id"],"nombre":ins_b["nombre"],
-                                "cantidad":cant_b,"costo_unit":ins_b.get("costo",0),"fecha":str(fecha_b),
-                                "responsable":resp_b or "—","nota":f"BAJA: {causa_b}"})
-                            st.success(f"✅ Baja: {fmt_n(cant_b)} {ins_b.get('unidad','')} de **{ins_b['nombre']}** — {fmt_cop(round(ct_b))}"); reload()
+                            costo_b=item_b.get("costo",0); ct_b=costo_b*cant_b
+                            if _tb=="insumo": db.update_insumo(item_b["id"],{"stock":stk_b-cant_b})
+                            elif _tb=="subreceta":
+                                try: db.update_subreceta(item_b["id"],{"stock":stk_b-cant_b})
+                                except: pass
+                            else:
+                                try: db.update_receta(item_b["id"],{"stock":stk_b-cant_b})
+                                except: pass
+                            db.add_baja({"insumo_id":item_b["id"],"nombre":item_b["nombre"],
+                                "unidad":item_b.get("unidad","und"),"cantidad":cant_b,
+                                "costo_unit":costo_b,"costo_total":ct_b,"causa":causa_b,
+                                "turno":turno_b,"fecha":str(fecha_b),"responsable":resp_b or "—",
+                                "autoriza":autor_b or "—","accion":accion_b,
+                                "tipo_item":_tb})
+                            db.add_movimiento({"tipo":"baja","insumo_id":item_b["id"],"nombre":item_b["nombre"],
+                                "cantidad":cant_b,"costo_unit":costo_b,"fecha":str(fecha_b),
+                                "responsable":resp_b or "—","nota":f"[{_tb}] BAJA: {causa_b}"})
+                            st.success(f"✅ Baja: {fmt_n(cant_b)} {item_b.get('unidad','und')} de **{item_b['nombre']}** — {fmt_cop(round(ct_b))}"); reload()
     with tab_hist:
         lunes_b=date.today()-timedelta(days=date.today().weekday())
         bajas_sem=[b for b in bajas if (b.get("fecha") or "")>=str(lunes_b)]
@@ -1444,37 +1495,92 @@ elif current == "alertas":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "reportes":
     st.title("📈 Reportes")
-    tab_inv,tab_bajas,tab_cons=st.tabs(["📦 Inventario","🗑️ Bajas","📊 Consumo"])
+    tab_inv,tab_bajas,tab_movs,tab_cons=st.tabs(["📦 Inventario","🗑️ Bajas por período","↕️ Movimientos","📊 Consumo"])
     with tab_inv:
         if insumos:
             total_v=sum(i.get("stock",0)*i.get("costo",0) for i in insumos)
-            st.metric("Valor total inventario",fmt_cop(round(total_v)))
-            cat_s=st.selectbox("Categoría",["Todas"]+CATEGORIAS,key="rcat")
+            ri1,ri2=st.columns([2,3])
+            ri1.metric("Valor total inventario",fmt_cop(round(total_v)))
+            ri2.metric("Total insumos",f"{len(insumos)} registrados")
+            cat_s=st.selectbox("Filtrar categoría",["Todas"]+CATEGORIAS,key="rcat")
             lista_ri=insumos if cat_s=="Todas" else [i for i in insumos if i.get("categoria")==cat_s]
-            df_ri=pd.DataFrame([{"Insumo":i["nombre"],"Categoría":i.get("categoria"),"Stock":i.get("stock",0),"Unidad":i.get("unidad"),
-                "Costo":fmt_cop(i.get("costo",0)),"Valor":fmt_cop(round(i.get("stock",0)*i.get("costo",0))),
-                "Estado":"⚠️" if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"] else "✓"} for i in lista_ri])
+            df_ri=pd.DataFrame([{"Insumo":i["nombre"],"Categoría":i.get("categoria",""),"Stock":i.get("stock",0),
+                "Unidad":i.get("unidad",""),"Costo unit.":i.get("costo",0),
+                "Valor COP":round(i.get("stock",0)*i.get("costo",0)),
+                "Mínimo":i.get("minimo",0),
+                "Estado":"⚠️ Bajo" if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"] else "✓ OK"} for i in lista_ri])
             st.dataframe(df_ri,hide_index=True,use_container_width=True)
+            st.download_button("⬇️ Exportar inventario CSV",df_ri.to_csv(index=False).encode("utf-8"),
+                               f"inventario_{hoy()}.csv","text/csv",use_container_width=True)
             cats_d={};[cats_d.update({i.get("categoria","Otros"):cats_d.get(i.get("categoria","Otros"),0)+i.get("stock",0)*i.get("costo",0)}) for i in insumos]
-            fig_c=px.bar(x=list(cats_d.keys()),y=[round(v/1000) for v in cats_d.values()],labels={"x":"Categoría","y":"Valor (miles COP)"},color_discrete_sequence=["#7C4A1E"])
-            fig_c.update_layout(height=260,margin=dict(t=10,b=10),plot_bgcolor="#fff8f0",paper_bgcolor="#fff8f0")
+            fig_c=px.bar(x=list(cats_d.keys()),y=[round(v/1000) for v in cats_d.values()],
+                         labels={"x":"Categoría","y":"Valor (miles COP)"},color_discrete_sequence=["#7C4A1E"],
+                         title="Valor de inventario por categoría")
+            fig_c.update_layout(height=300,margin=dict(t=40,b=10),plot_bgcolor="#fff8f0",paper_bgcolor="#fff8f0")
             st.plotly_chart(fig_c,use_container_width=True)
-            st.download_button("⬇️ Exportar reporte",df_ri.to_csv(index=False).encode("utf-8"),f"inventario_{hoy()}.csv","text/csv")
     with tab_bajas:
-        if bajas:
+        rb1,rb2,rb3=st.columns([2,2,2])
+        desde_b=rb1.date_input("Desde",value=date.today()-timedelta(days=30),key="rb_desde")
+        hasta_b=rb2.date_input("Hasta",value=date.today(),key="rb_hasta")
+        causa_filt=rb3.selectbox("Causa",["Todas"]+CAUSAS_BAJA,key="rb_causa")
+        lista_rb=[b for b in bajas if str(desde_b)<=(b.get("fecha") or "")<=str(hasta_b)]
+        if causa_filt!="Todas": lista_rb=[b for b in lista_rb if b.get("causa")==causa_filt]
+        total_rb=sum(b.get("costo_total",0) for b in lista_rb)
+        rb_k1,rb_k2,rb_k3=st.columns(3)
+        rb_k1.metric("Registros en período",len(lista_rb))
+        rb_k2.metric("Costo total bajas",fmt_cop(round(total_rb)))
+        rb_k3.metric("Período analizado",f"{(hasta_b-desde_b).days} días")
+        if lista_rb:
+            df_rb=pd.DataFrame([{"Fecha":b.get("fecha"),"Turno":b.get("turno",""),"Tipo":b.get("tipo_item","insumo"),
+                "Ítem":b.get("nombre"),"Cantidad":b.get("cantidad",0),"Unidad":b.get("unidad",""),
+                "Causa":b.get("causa"),"Costo total":round(b.get("costo_total",0)),
+                "Responsable":b.get("responsable"),"Autoriza":b.get("autoriza","—")} for b in lista_rb])
+            st.dataframe(df_rb,hide_index=True,use_container_width=True)
+            st.download_button("⬇️ Exportar bajas CSV",df_rb.to_csv(index=False).encode("utf-8"),
+                               f"bajas_{desde_b}_{hasta_b}.csv","text/csv",use_container_width=True)
+            st.markdown("---")
             sem_data=[]
             for w in range(7,-1,-1):
                 hd=date.today(); lun=hd-timedelta(days=hd.weekday()+w*7); dom=lun+timedelta(days=6)
                 t=sum(b.get("costo_total",0) for b in bajas if str(lun)<=(b.get("fecha") or "")<=str(dom))
-                sem_data.append({"Semana":f"S-{w}","Bajas (COP)":round(t/1000)})
-            fig_sem=px.line(pd.DataFrame(sem_data),x="Semana",y="Bajas (COP)",markers=True,color_discrete_sequence=["#c0392b"])
-            fig_sem.update_layout(height=240,margin=dict(t=10,b=10),plot_bgcolor="#fff8f0",paper_bgcolor="#fff8f0")
-            st.plotly_chart(fig_sem,use_container_width=True)
-            causa_t={c:sum(b.get("costo_total",0) for b in bajas if b.get("causa")==c) for c in CAUSAS_BAJA}
-            fig_pie=px.pie(values=list(causa_t.values()),names=list(causa_t.keys()),color_discrete_sequence=px.colors.qualitative.Warm)
-            fig_pie.update_layout(height=280,margin=dict(t=10,b=10),paper_bgcolor="#fff8f0")
-            st.plotly_chart(fig_pie,use_container_width=True)
-        else: st.info("Sin bajas registradas.")
+                sem_data.append({"Semana":f"S-{w}","Bajas (miles COP)":round(t/1000)})
+            c_charts1,c_charts2=st.columns(2)
+            with c_charts1:
+                fig_sem=px.line(pd.DataFrame(sem_data),x="Semana",y="Bajas (miles COP)",markers=True,
+                                color_discrete_sequence=["#c0392b"],title="Tendencia semanal (8 semanas)")
+                fig_sem.update_layout(height=260,margin=dict(t=40,b=10),plot_bgcolor="#fff8f0",paper_bgcolor="#fff8f0")
+                st.plotly_chart(fig_sem,use_container_width=True)
+            with c_charts2:
+                causa_t={c:sum(b.get("costo_total",0) for b in lista_rb if b.get("causa")==c) for c in CAUSAS_BAJA}
+                causa_t={k:v for k,v in causa_t.items() if v>0}
+                if causa_t:
+                    fig_pie=px.pie(values=list(causa_t.values()),names=list(causa_t.keys()),
+                                   color_discrete_sequence=px.colors.qualitative.Warm,title="Por causa")
+                    fig_pie.update_layout(height=260,margin=dict(t=40,b=10),paper_bgcolor="#fff8f0")
+                    st.plotly_chart(fig_pie,use_container_width=True)
+        else: st.info("Sin bajas en el período seleccionado.")
+    with tab_movs:
+        rm1,rm2,rm3=st.columns([2,2,2])
+        desde_m=rm1.date_input("Desde",value=date.today()-timedelta(days=7),key="rm_desde")
+        hasta_m=rm2.date_input("Hasta",value=date.today(),key="rm_hasta")
+        tipo_m_filt=rm3.selectbox("Tipo",["Todos","entrada","salida","venta","baja"],key="rm_tipo")
+        lista_rm=[m for m in movs if str(desde_m)<=(m.get("fecha") or "")<=str(hasta_m)]
+        if tipo_m_filt!="Todos": lista_rm=[m for m in lista_rm if m.get("tipo")==tipo_m_filt]
+        total_rm_e=sum(m.get("cantidad",0) for m in lista_rm if m.get("tipo")=="entrada")
+        total_rm_s=sum(m.get("cantidad",0) for m in lista_rm if m.get("tipo")=="salida")
+        rk1,rk2,rk3=st.columns(3)
+        rk1.metric("Total registros",len(lista_rm))
+        rk2.metric("Entradas",int(total_rm_e))
+        rk3.metric("Salidas",int(total_rm_s))
+        if lista_rm:
+            df_rm=pd.DataFrame([{"Fecha":m.get("fecha"),"Tipo":m.get("tipo"),
+                "Ítem":m.get("nombre","—"),"Cantidad":m.get("cantidad",0),
+                "Costo unit.":m.get("costo_unit",0),"Responsable":m.get("responsable","—"),
+                "Nota":m.get("nota","—")} for m in lista_rm])
+            st.dataframe(df_rm,hide_index=True,use_container_width=True)
+            st.download_button("⬇️ Exportar movimientos CSV",df_rm.to_csv(index=False).encode("utf-8"),
+                               f"movimientos_{desde_m}_{hasta_m}.csv","text/csv",use_container_width=True)
+        else: st.info("Sin movimientos en el período seleccionado.")
     with tab_cons:
         consumo={}
         for m in movs:
@@ -1507,10 +1613,32 @@ elif current == "produccion":
         # ── PLAN MANUAL ───────────────────────────────────────────────────────
         with tab_manual:
             st.markdown("Define cuántas porciones producir esta semana por receta.")
-            cf1,cf2=st.columns([2,3])
-            cat_prod=cf1.selectbox("Filtrar categoría",["Todas"]+CAT_RECETA)
-            recetas_prod=recetas if cat_prod=="Todas" else [r for r in recetas if r.get("categoria")==cat_prod]
             if "porciones_prod" not in st.session_state: st.session_state.porciones_prod={}
+
+            # Import/Export del plan
+            pm_c1,pm_c2,pm_c3=st.columns([2,2,2])
+            cat_prod=pm_c1.selectbox("Filtrar categoría",["Todas"]+CAT_RECETA)
+
+            # Exportar plan actual como CSV
+            plan_rows=[{"receta_id":r["id"],"nombre":r["nombre"],"categoria":r.get("categoria",""),
+                        "porciones":st.session_state.porciones_prod.get(r["id"],0)} for r in recetas]
+            plan_csv=pd.DataFrame(plan_rows).to_csv(index=False).encode("utf-8")
+            pm_c2.download_button("⬇️ Exportar plan CSV",plan_csv,f"plan_produccion_{hoy()}.csv","text/csv",use_container_width=True)
+
+            # Importar plan desde CSV
+            plan_upload=pm_c3.file_uploader("📥 Importar plan CSV",type=["csv"],key="plan_upload",label_visibility="collapsed")
+            if plan_upload:
+                try:
+                    df_plan=pd.read_csv(plan_upload)
+                    df_plan.columns=[c.strip().lower() for c in df_plan.columns]
+                    for _,row in df_plan.iterrows():
+                        rid=str(row.get("receta_id","")).strip()
+                        p=int(row.get("porciones",0) or 0)
+                        if rid: st.session_state.porciones_prod[rid]=p
+                    st.success(f"✅ Plan importado: {len(df_plan)} recetas cargadas"); st.rerun()
+                except Exception as ex: st.error(f"Error al importar: {ex}")
+
+            recetas_prod=recetas if cat_prod=="Todas" else [r for r in recetas if r.get("categoria")==cat_prod]
             for r in recetas_prod:
                 default=st.session_state.porciones_prod.get(r["id"],int(r.get("porciones",1)))
                 c_n,c_p=st.columns([4,1])
@@ -1634,12 +1762,33 @@ elif current == "produccion":
                         "Costo total":fmt_cop(round(ct*sugerido)),
                         "Venta estimada":fmt_cop(round(precio*sugerido)),
                     })
-                st.caption(f"Período analizado: {dias_periodo} días | Factor: {factor}%")
-                st.dataframe(pd.DataFrame(rows_sug),hide_index=True,use_container_width=True)
+                st.caption(f"Período analizado: {dias_periodo} días | Factor: {factor}% — Puedes editar la columna **'Sugerido semana'** antes de cargar el plan.")
+                df_sug=pd.DataFrame(rows_sug)
+                edited_sug=st.data_editor(
+                    df_sug,hide_index=True,use_container_width=True,
+                    column_config={
+                        "Receta":st.column_config.Column(disabled=True),
+                        "Categoría":st.column_config.Column(disabled=True),
+                        "Vendido en período":st.column_config.NumberColumn(disabled=True),
+                        "Promedio diario":st.column_config.Column(disabled=True),
+                        "Sugerido semana":st.column_config.NumberColumn("Sugerido semana ✏️",min_value=0,step=1,format="%d",help="Edita esta columna para ajustar la cantidad sugerida"),
+                        "Costo total":st.column_config.Column(disabled=True),
+                        "Venta estimada":st.column_config.Column(disabled=True),
+                    },
+                    key="edit_sug",
+                )
+                # Recalcular sug_porciones con los valores editados
+                for i,(rid,_) in enumerate(sorted(ventas_periodo.items(),key=lambda x:x[1],reverse=True)):
+                    if i<len(edited_sug):
+                        sug_porciones[rid]=int(edited_sug.iloc[i]["Sugerido semana"] or 0)
 
-                if st.button("✅ Usar esta sugerencia como plan de producción",type="primary",use_container_width=True):
+                c_btn1,c_btn2=st.columns(2)
+                if c_btn1.button("✅ Usar como plan de producción",type="primary",use_container_width=True):
                     st.session_state.porciones_prod=sug_porciones
                     st.success("✅ Sugerencia cargada en el Plan Manual. Ve a la pestaña ✏️ Plan manual para ver los insumos.")
+                df_sug_exp=pd.DataFrame([{"receta_id":rid,"nombre":next((r["nombre"] for r in recetas if r["id"]==rid),""),"porciones":p} for rid,p in sug_porciones.items()])
+                c_btn2.download_button("⬇️ Exportar sugerencia CSV",df_sug_exp.to_csv(index=False).encode("utf-8"),
+                                       f"sugerencia_{hoy()}.csv","text/csv",use_container_width=True)
 
                 # Insumos necesarios para la sugerencia
                 st.markdown("---"); st.subheader("📦 Insumos necesarios para esta sugerencia")
