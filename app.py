@@ -1608,7 +1608,7 @@ elif current == "produccion":
     if not recetas:
         st.warning("No hay recetas registradas.")
     else:
-        tab_manual,tab_ventas=st.tabs(["✏️ Plan manual","📊 Sugerida por ventas"])
+        tab_manual,tab_ventas,tab_loggro=st.tabs(["✏️ Plan manual","📊 Sugerida por ventas","📥 Importar desde Loggro"])
 
         # ── PLAN MANUAL ───────────────────────────────────────────────────────
         with tab_manual:
@@ -1862,6 +1862,155 @@ elif current == "produccion":
                             c3.metric("Tandas a preparar",f"{tandas:.1f}")
                     df_sp=pd.DataFrame(rows_sp)
                     st.download_button("⬇️ Exportar plan de sub-recetas",df_sp.to_csv(index=False).encode("utf-8"),f"subrecetas_sugeridas_{hoy()}.csv","text/csv",use_container_width=True)
+
+        # ── IMPORTAR DESDE LOGGRO ─────────────────────────────────────────────
+        with tab_loggro:
+            st.markdown("### 📥 Importar reporte de ventas desde Loggro")
+            st.info("Descarga de Loggro: **Reportes → Reporte de ventas por productos** (formato Excel .xlsx). "
+                    "El sistema leerá las columnas **Producto**, **Cantidad** y **Categoría** automáticamente.")
+
+            loggro_file=st.file_uploader("Sube el archivo Excel de Loggro",type=["xlsx","xls"],key="loggro_upload")
+
+            if loggro_file:
+                try:
+                    import io, openpyxl as _oxl
+                    wb_l=_oxl.load_workbook(io.BytesIO(loggro_file.read()),data_only=True)
+                    ws_l=wb_l.active
+                    rows_l=list(ws_l.iter_rows(values_only=True))
+                    if not rows_l: st.error("Archivo vacío"); st.stop()
+
+                    header_l=[str(h).strip() if h else "" for h in rows_l[0]]
+                    # Buscar índices tolerando variaciones de nombre
+                    def _col(names):
+                        for n in names:
+                            for i,h in enumerate(header_l):
+                                if n.lower() in h.lower(): return i
+                        return None
+                    idx_prod=_col(["Producto","Product"])
+                    idx_cant=_col(["Cantidad","Qty","Quantity"])
+                    idx_cat =_col(["Categoría","Categoria","Category"])
+                    idx_fecha=_col(["Fecha","Date"])
+
+                    if idx_prod is None or idx_cant is None:
+                        st.error("No se encontraron las columnas 'Producto' y 'Cantidad'. Verifica que sea el reporte correcto de Loggro.")
+                        st.stop()
+
+                    # Agrupar ventas por producto (excluir Adiciones y filas vacías)
+                    from collections import defaultdict
+                    ventas_l=defaultdict(float); cats_l={}; fechas_l=[]
+                    for r in rows_l[1:]:
+                        cat=str(r[idx_cat] or "").strip() if idx_cat is not None else ""
+                        if cat.lower() in ("adiciones","adición","adicion"): continue
+                        prod=str(r[idx_prod] or "").strip() if r[idx_prod] else ""
+                        cant=r[idx_cant] or 0
+                        if prod and cant:
+                            try: ventas_l[prod]+=float(cant); cats_l[prod]=cat
+                            except: pass
+                        if idx_fecha is not None and r[idx_fecha]: fechas_l.append(r[idx_fecha])
+
+                    if not ventas_l: st.warning("No se encontraron productos en el archivo."); st.stop()
+
+                    fecha_min=min(fechas_l).date() if fechas_l else "—"
+                    fecha_max=max(fechas_l).date() if fechas_l else "—"
+                    total_items=int(sum(ventas_l.values()))
+                    lk1,lk2,lk3=st.columns(3)
+                    lk1.metric("Período",f"{fecha_min} → {fecha_max}")
+                    lk2.metric("Productos únicos",len(ventas_l))
+                    lk3.metric("Total unidades vendidas",total_items)
+
+                    # Matching con recetas del sistema
+                    def _norm(s): return s.lower().strip()
+                    recetas_map={_norm(r["nombre"]):r for r in recetas}
+
+                    rows_match=[]
+                    for prod,cant in sorted(ventas_l.items(),key=lambda x:x[1],reverse=True):
+                        pn=_norm(prod)
+                        # Exacto
+                        match=recetas_map.get(pn)
+                        # Parcial: nombre de receta contenido en producto o viceversa
+                        if not match:
+                            for rn,r in recetas_map.items():
+                                if rn in pn or pn in rn: match=r; break
+                        rows_match.append({
+                            "Producto Loggro":prod,
+                            "Categoría":cats_l.get(prod,""),
+                            "Vendido":int(cant),
+                            "Receta en sistema":match["nombre"] if match else "⚠️ Sin coincidencia",
+                            "_receta_id":match["id"] if match else None,
+                        })
+
+                    st.markdown("---")
+                    st.markdown("#### 🔗 Coincidencias detectadas")
+                    st.caption("Solo los productos con receta vinculada se cargarán al plan. "
+                               "Los marcados ⚠️ se omiten — puedes vincularlos manualmente después desde la pestaña ✏️ Plan manual.")
+
+                    matched=[r for r in rows_match if r["_receta_id"]]
+                    unmatched=[r for r in rows_match if not r["_receta_id"]]
+                    sin_pct=round(len(unmatched)/len(rows_match)*100) if rows_match else 0
+
+                    mc1,mc2=st.columns(2)
+                    mc1.metric("✅ Con coincidencia",f"{len(matched)} productos")
+                    mc2.metric("⚠️ Sin coincidencia",f"{len(unmatched)} productos ({sin_pct}%)")
+
+                    # Tabla de coincidencias
+                    nombre_opts=["— Omitir —"]+[r["nombre"] for r in recetas]
+                    recetas_nombre={r["nombre"]:r for r in recetas}
+
+                    df_match_show=pd.DataFrame([{
+                        "Producto Loggro":r["Producto Loggro"],
+                        "Categoría":r["Categoría"],
+                        "Vendido":r["Vendido"],
+                        "Receta vinculada":r["Receta en sistema"],
+                    } for r in rows_match])
+                    st.dataframe(df_match_show,hide_index=True,use_container_width=True)
+
+                    # Sección de corrección manual para los sin coincidencia
+                    if unmatched:
+                        with st.expander(f"✏️ Vincular manualmente los {len(unmatched)} productos sin coincidencia",expanded=False):
+                            st.caption("Selecciona la receta correspondiente para cada producto de Loggro.")
+                            correcciones={}
+                            for r in unmatched:
+                                col_a,col_b=st.columns([3,3])
+                                col_a.markdown(f"**{r['Producto Loggro']}** — {r['Vendido']} und")
+                                sel_r=col_b.selectbox("Vincular a →",nombre_opts,key=f"lmatch_{r['Producto Loggro']}")
+                                if sel_r!="— Omitir —":
+                                    correcciones[r["Producto Loggro"]]=recetas_nombre[sel_r]["id"]
+
+                            # Aplicar correcciones
+                            for r in rows_match:
+                                if r["_receta_id"] is None and r["Producto Loggro"] in correcciones:
+                                    r["_receta_id"]=correcciones[r["Producto Loggro"]]
+
+                    # Botón cargar plan
+                    st.markdown("---")
+                    lc1,lc2=st.columns(2)
+                    factor_l=lc1.number_input("Factor de ajuste (%)",min_value=50,max_value=300,value=100,step=5,
+                        help="100% = igual a lo vendido. 120% = 20% extra por seguridad.")
+                    if lc2.button("✅ Cargar en Plan de Producción",type="primary",use_container_width=True):
+                        nuevo_plan={}
+                        for r in rows_match:
+                            if r["_receta_id"]:
+                                cant_ajust=round(r["Vendido"]*(factor_l/100))
+                                rid=r["_receta_id"]
+                                nuevo_plan[rid]=nuevo_plan.get(rid,0)+cant_ajust
+                        st.session_state.porciones_prod=nuevo_plan
+                        n_cargados=len([v for v in nuevo_plan.values() if v>0])
+                        st.success(f"✅ Plan cargado con {n_cargados} recetas. Ve a **✏️ Plan manual** para ver los insumos necesarios.")
+
+                    # Exportar tabla de coincidencias
+                    df_exp_l=pd.DataFrame([{
+                        "producto_loggro":r["Producto Loggro"],
+                        "categoria":r["Categoría"],
+                        "vendido":r["Vendido"],
+                        "receta_sistema":r["Receta en sistema"],
+                    } for r in rows_match])
+                    st.download_button("⬇️ Exportar tabla de coincidencias CSV",
+                        df_exp_l.to_csv(index=False).encode("utf-8"),
+                        f"loggro_coincidencias_{hoy()}.csv","text/csv")
+
+                except Exception as ex:
+                    st.error(f"Error procesando el archivo: {ex}")
+                    import traceback; st.code(traceback.format_exc())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
