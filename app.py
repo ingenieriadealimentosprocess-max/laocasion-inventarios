@@ -347,7 +347,8 @@ current = PAGES[page]
 def load_all():
     return {"insumos":db.get_insumos(),"recetas":db.get_recetas(),
             "subrecetas":db.get_subrecetas(),"movs":db.get_movimientos(),
-            "bajas":db.get_bajas(),"config":db.get_config()}
+            "bajas":db.get_bajas(),"config":db.get_config(),
+            "cf_items":db.get_costos_fijos_items()}
 
 def reload():
     load_all.clear(); st.rerun()
@@ -356,8 +357,12 @@ data       = load_all()
 insumos    = data["insumos"];   recetas    = data["recetas"]
 subrecetas = data["subrecetas"]; movs       = data["movs"]
 bajas      = data["bajas"];     cfg        = data["config"]
-costos_fijos  = float(cfg.get("costos_fijos",15))
-umbral_precio = float(cfg.get("umbral_precio",3))
+cf_items   = data["cf_items"]
+umbral_precio    = float(cfg.get("umbral_precio",3))
+ventas_esperadas = float(cfg.get("ventas_esperadas",0))
+# Costos fijos: calculados desde ítems si hay ventas esperadas, si no usa el % guardado
+_cf_total = sum(float(i.get("monto",0)) for i in cf_items if i.get("activo",True))
+costos_fijos = round((_cf_total/ventas_esperadas)*100,2) if ventas_esperadas>0 and cf_items else float(cfg.get("costos_fijos",15))
 panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]
 
 def kpi(col,val,lbl,t=""):
@@ -725,13 +730,21 @@ elif current == "recetas":
 
     with tab_cf:
         st.subheader("Costos fijos de cocina")
-        with st.form("form_cf"):
-            val_cf=st.number_input("% Costos fijos",0.0,100.0,value=costos_fijos,step=0.5)
-            if st.form_submit_button("💾 Guardar"):
-                db.update_config(val_cf,umbral_precio); st.success(f"✅ Costos fijos: {val_cf}%"); reload()
+        # Resumen del % actual
+        if cf_items and ventas_esperadas>0:
+            _tot_act=sum(float(i.get("monto",0)) for i in cf_items if i.get("activo",True))
+            st.success(f"% costos fijos vigente: **{costos_fijos}%** — calculado desde {len([i for i in cf_items if i.get('activo',True)])} ítem(s) activos · Total: {fmt_cop(round(_tot_act))}")
+            with st.expander("Ver detalle de costos fijos",expanded=False):
+                rows_cfi=[{"Ítem":i["nombre"],"Monto":fmt_cop(i.get("monto",0)),"Estado":"✅ Activo" if i.get("activo",True) else "⏸️ Inactivo"} for i in cf_items]
+                st.dataframe(pd.DataFrame(rows_cfi),hide_index=True,use_container_width=True)
+                st.caption("Para agregar o modificar costos fijos, ve a ⚙️ Configuración → 💰 Costos Fijos.")
+        else:
+            st.info(f"% costos fijos aplicado: **{costos_fijos}%** (configurado manualmente en ⚙️ Configuración)")
+        # Impacto en recetas
         if recetas:
+            st.markdown("---")
             rows_cf=[]
-            for r in recetas[:15]:
+            for r in recetas[:20]:
                 ci=calc.costo_ingredientes_receta(r,insumos,subrecetas)
                 ct=calc.costo_receta(r,insumos,subrecetas,costos_fijos)
                 m=calc.margen_receta(r,insumos,subrecetas,costos_fijos)
@@ -2289,12 +2302,90 @@ El sistema genera alertas automáticas en tres categorías:
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "config":
     st.title("⚙️ Configuración")
-    with st.form("form_cfg"):
+
+    tab_cf_cfg, tab_otros = st.tabs(["💰 Costos Fijos","⚙️ Otros parámetros"])
+
+    # ── TAB COSTOS FIJOS ──────────────────────────────────────────────────────
+    with tab_cf_cfg:
+        st.subheader("Costos fijos del negocio")
+        st.caption("Registra cada costo fijo mensual (arriendo, servicios, salarios, etc.). "
+                   "El sistema calcula automáticamente el % a aplicar en recetas.")
+
+        # ── Agregar nuevo ítem ──
+        with st.expander("➕ Agregar costo fijo",expanded=not cf_items):
+            with st.form("form_add_cf"):
+                fa1,fa2,fa3=st.columns([3,2,1])
+                cf_nom=fa1.text_input("Nombre del costo *",placeholder="Ej: Arriendo, Servicios, Salarios")
+                cf_monto=fa2.number_input("Monto mensual (COP) *",min_value=0,step=10000,value=0)
+                cf_activo=fa3.selectbox("Estado",["Activo","Inactivo"])
+                if st.form_submit_button("💾 Agregar",use_container_width=True):
+                    if not cf_nom.strip(): st.error("Escribe el nombre del costo.")
+                    elif cf_monto<=0: st.error("El monto debe ser mayor a 0.")
+                    else:
+                        db.add_costo_fijo({"nombre":cf_nom.strip(),"monto":cf_monto,"activo":cf_activo=="Activo"})
+                        st.success(f"✅ Costo '{cf_nom}' agregado."); reload()
+
+        # ── Tabla de ítems actuales ──
+        if cf_items:
+            st.markdown("**Costos fijos registrados:**")
+            for item in cf_items:
+                with st.expander(
+                    f"{'✅' if item.get('activo',True) else '⏸️'} **{item['nombre']}** — {fmt_cop(item.get('monto',0))}",
+                    expanded=False):
+                    with st.form(f"form_cf_{item['id']}"):
+                        ec1,ec2,ec3=st.columns([3,2,1])
+                        e_nom=ec1.text_input("Nombre",value=item["nombre"],key=f"cfn_{item['id']}")
+                        e_monto=ec2.number_input("Monto (COP)",min_value=0,step=10000,
+                                                  value=int(item.get("monto",0)),key=f"cfm_{item['id']}")
+                        e_act=ec3.selectbox("Estado",["Activo","Inactivo"],
+                                             index=0 if item.get("activo",True) else 1,key=f"cfa_{item['id']}")
+                        sb1,sb2=st.columns(2)
+                        if sb1.form_submit_button("💾 Guardar cambios",use_container_width=True):
+                            db.update_costo_fijo(item["id"],{"nombre":e_nom.strip(),"monto":e_monto,"activo":e_act=="Activo"})
+                            st.success("✅ Actualizado"); reload()
+                        if sb2.form_submit_button("🗑️ Eliminar",use_container_width=True):
+                            db.delete_costo_fijo(item["id"]); st.success("✅ Eliminado"); reload()
+
+            # ── Resumen y cálculo del % ──
+            st.markdown("---")
+            activos=[i for i in cf_items if i.get("activo",True)]
+            total_cf=sum(float(i.get("monto",0)) for i in activos)
+            st.metric("Total costos fijos activos (mensual)",fmt_cop(round(total_cf)))
+
+            st.markdown("**Ventas esperadas mensuales** (para calcular el % automático):")
+            with st.form("form_ventas_esp"):
+                ve_v=st.number_input("Ventas esperadas (COP/mes)",min_value=0,step=100000,
+                                      value=int(ventas_esperadas),
+                                      help="Ingresa tus ventas brutas esperadas al mes para que el sistema calcule el % de costos fijos.")
+                if st.form_submit_button("💾 Guardar ventas esperadas",use_container_width=True):
+                    cf_pct=round((total_cf/ve_v)*100,2) if ve_v>0 else costos_fijos
+                    db.update_config(cf_pct,umbral_precio,ve_v)
+                    st.success(f"✅ Guardado. % costos fijos calculado: **{cf_pct}%**"); reload()
+
+            if ventas_esperadas>0:
+                cf_calc=round((total_cf/ventas_esperadas)*100,2)
+                c_kpi1,c_kpi2,c_kpi3=st.columns(3)
+                c_kpi1.metric("Ventas esperadas/mes",fmt_cop(round(ventas_esperadas)))
+                c_kpi2.metric("Total costos fijos",fmt_cop(round(total_cf)))
+                c_kpi3.metric("% Costos fijos en recetas",f"{cf_calc}%",
+                               help="Este porcentaje se aplica sobre el costo de ingredientes en todas las recetas.")
+            else:
+                st.info("Ingresa las ventas esperadas para calcular el % automáticamente.")
+                st.caption(f"% actual aplicado en recetas: **{costos_fijos}%** (configurado manualmente)")
+        else:
+            st.info("Aún no hay costos fijos registrados. Agrega el primero arriba.")
+
+    # ── TAB OTROS PARÁMETROS ─────────────────────────────────────────────────
+    with tab_otros:
         st.subheader("Parámetros del sistema")
-        cf_v=st.number_input("% Costos fijos de cocina",0.0,100.0,value=costos_fijos,step=0.5)
-        up_v=st.number_input("% Umbral alerta de precio",0.1,100.0,value=umbral_precio,step=0.5)
-        if st.form_submit_button("💾 Guardar configuración",use_container_width=True):
-            db.update_config(cf_v,up_v); st.success("✅ Configuración guardada"); reload()
-    st.markdown("---")
-    if st.button("🔄 Recargar datos desde la base de datos"):
-        reload()
+        with st.form("form_cfg_otros"):
+            cf_manual=st.number_input("% Costos fijos (manual, si no usas la lista)",
+                                       0.0,100.0,value=costos_fijos,step=0.5,
+                                       help="Se ignora automáticamente si tienes costos fijos registrados con ventas esperadas.")
+            up_v=st.number_input("% Umbral alerta de precio",0.1,100.0,value=umbral_precio,step=0.5)
+            if st.form_submit_button("💾 Guardar",use_container_width=True):
+                db.update_config(cf_manual,up_v,ventas_esperadas)
+                st.success("✅ Configuración guardada"); reload()
+        st.markdown("---")
+        if st.button("🔄 Recargar datos desde la base de datos"):
+            reload()

@@ -137,12 +137,35 @@ def add_baja(data: dict):
 
 def get_config():
     rows = get_client().table("config").select("*").eq("id", 1).execute().data
-    return rows[0] if rows else {"costos_fijos": 15.0, "umbral_precio": 3.0}
+    return rows[0] if rows else {"costos_fijos": 15.0, "umbral_precio": 3.0, "ventas_esperadas": 0}
 
 
-def update_config(costos_fijos: float, umbral_precio: float):
+def update_config(costos_fijos: float, umbral_precio: float, ventas_esperadas: float = 0):
     get_client().table("config").upsert({
         "id": 1,
         "costos_fijos": costos_fijos,
-        "umbral_precio": umbral_precio
+        "umbral_precio": umbral_precio,
+        "ventas_esperadas": ventas_esperadas,
     }).execute()
+
+
+# ── COSTOS FIJOS ITEMS ────────────────────────────────────────────────────────
+
+def get_costos_fijos_items():
+    try:
+        return get_client().table("costos_fijos_items").select("*").order("nombre").execute().data or []
+    except Exception:
+        return []
+
+
+def add_costo_fijo(data: dict):
+    data["id"] = uid()
+    get_client().table("costos_fijos_items").insert(data).execute()
+
+
+def update_costo_fijo(id: str, data: dict):
+    get_client().table("costos_fijos_items").update(data).eq("id", id).execute()
+
+
+def delete_costo_fijo(id: str):
+    get_client().table("costos_fijos_items").delete().eq("id", id).execute()
