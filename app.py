@@ -2432,6 +2432,9 @@ CREATE TABLE IF NOT EXISTS costos_fijos_items (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Permitir lectura y escritura (igual que el resto de tablas)
+ALTER TABLE costos_fijos_items DISABLE ROW LEVEL SECURITY;
+
 ALTER TABLE config ADD COLUMN IF NOT EXISTS ventas_esperadas NUMERIC DEFAULT 0;
 ALTER TABLE movimientos ADD COLUMN IF NOT EXISTS pan_id TEXT;""",
                 language="sql")
