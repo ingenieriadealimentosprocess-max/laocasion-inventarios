@@ -298,7 +298,9 @@ UNIDADES   = ["g","kg","ml","L","unidad","porción","taza","cucharada","cucharad
 CAUSAS_BAJA= ["Vencimiento","Contaminación","Error de preparación","Sobre-producción",
                "Accidente / caída","Devolución cliente","Error de porción","Otro"]
 TURNOS     = ["Mañana","Tarde","Noche"]
-CAT_RECETA = ["Plato Principal","Entrada","Postre","Bebida","Brunch","Panadería","Pastelería","Especial"]
+CAT_RECETA    = ["Plato Principal","Entrada","Postre","Bebida","Brunch","Panadería","Pastelería","Especial","Sanduches Salados","Sanduches Dulces"]
+CAT_SANDUCHE  = ["Sanduches Salados","Sanduches Dulces"]   # recetas que requieren elección de pan
+CAT_PAN_SUB   = "Tipo de pan"                              # categoría de sub-recetas que son bases de pan
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  NAVEGACIÓN
@@ -356,6 +358,7 @@ subrecetas = data["subrecetas"]; movs       = data["movs"]
 bajas      = data["bajas"];     cfg        = data["config"]
 costos_fijos  = float(cfg.get("costos_fijos",15))
 umbral_precio = float(cfg.get("umbral_precio",3))
+panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]
 
 def kpi(col,val,lbl,t=""):
     col.markdown(f'<div class="kpi-box {t}"><div class="kpi-val">{val}</div><div class="kpi-lbl">{lbl}</div></div>',
@@ -914,7 +917,7 @@ elif current == "subrecetas":
         else:
             n_s=st.text_input("Nombre de la sub-receta *")
             sc1,sc2,sc3=st.columns(3)
-            cat_s=sc1.selectbox("Categoría",["Base","Salsa","Aliño","Masa","Relleno","Pastelería","Panadería","Otro"])
+            cat_s=sc1.selectbox("Categoría",["Base","Salsa","Aliño","Masa","Relleno","Pastelería","Panadería","Tipo de pan","Otro"])
             rend_s=sc2.number_input("Rendimiento",min_value=0.01,step=1.0)
             u_s=sc3.selectbox("Unidad rendimiento",UNIDADES)
             st.markdown("**Ingredientes**")
@@ -1158,11 +1161,37 @@ elif current == "movimientos":
             cant_v=st.number_input("Porciones",min_value=1,step=1,value=1)
             vc1,vc2=st.columns(2)
             fecha_v=vc1.date_input("Fecha",value=date.today()); resp_v=vc2.text_input("Responsable")
+
+            # ── Selector de pan (solo para sanduches) ─────────────────────────
+            pan_elegido=None
             if sel_v!="— Selecciona —":
                 rec_v=opts_v[sel_v]
+                es_sanduche=rec_v.get("categoria") in CAT_SANDUCHE
+                if es_sanduche:
+                    if not panes_sub:
+                        st.warning("⚠️ No hay sub-recetas con categoría **'Tipo de pan'** registradas. "
+                                   "Ve a Sub-recetas → ➕ Nueva y agrégalas con esa categoría.")
+                    else:
+                        st.markdown("---")
+                        opts_pan={"— Selecciona pan —":None}
+                        for p in panes_sub: opts_pan[f"🍞 {p['nombre']}  ×{cant_v}"]=p
+                        sel_pan=st.selectbox("🍞 Tipo de pan *",list(opts_pan.keys()),key="sel_pan_v")
+                        pan_elegido=opts_pan[sel_pan]
+                        if pan_elegido:
+                            st.caption(f"Ingredientes del pan que también se descontarán:")
+                            for pi in pan_elegido.get("ingredientes",[]):
+                                if pi.get("ref_id","").startswith("ins:"):
+                                    pins=next((i for i in insumos if i["id"]==pi["ref_id"][4:]),None)
+                                    if pins:
+                                        pneed=calc.cant_bruta(pi.get("cantidad",pi.get("cant_neta",0))*cant_v,pi.get("merma",0))
+                                        pok=pins.get("stock",0)>=pneed
+                                        color="green" if pok else "red"
+                                        st.markdown(f"  :{color}[{'✓' if pok else '⚠️'}] {pins['nombre']}: -{fmt_n(round(pneed,3))} {pins.get('unidad','')}")
+                        st.markdown("---")
+
                 ct=calc.costo_receta(rec_v,insumos,subrecetas,costos_fijos)
                 precio=(rec_v.get("precio",0) or 0)
-                st.markdown("**Insumos que se descontarán automáticamente:**")
+                st.markdown("**Insumos del plato que se descontarán:**")
                 for ing in rec_v.get("ingredientes",[]):
                     if ing.get("ref_id","").startswith("ins:"):
                         ins_id=ing["ref_id"][4:]
@@ -1173,29 +1202,57 @@ elif current == "movimientos":
                             color="green" if ok else "red"
                             st.markdown(f":{color}[{'✓' if ok else '⚠️'}] **{ins_obj['nombre']}**: -{fmt_n(round(need,3))} {ins_obj.get('unidad','')} (disponible: {fmt_n(disp)})")
                 st.info(f"Costo: **{fmt_cop(round(ct*cant_v))}** | Venta: **{fmt_cop(round(precio*cant_v))}** | Margen: **{f'{(precio-ct)/precio*100:.1f}%' if precio>0 else '—'}**")
+
             if st.button("✅ Registrar venta",type="primary",use_container_width=True):
                 if sel_v=="— Selecciona —": st.error("Selecciona una receta")
                 else:
-                    rec_v2=opts_v[sel_v]; sin_stock=[]
-                    for ing in rec_v2.get("ingredientes",[]):
-                        if ing.get("ref_id","").startswith("ins:"):
-                            ins_id=ing["ref_id"][4:]
-                            ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
-                            if ins_obj and ins_obj.get("stock",0)<calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0)):
-                                sin_stock.append(ins_obj["nombre"])
-                    if sin_stock: st.error(f"Stock insuficiente: {', '.join(sin_stock)}")
+                    rec_v2=opts_v[sel_v]
+                    es_sanduche2=rec_v2.get("categoria") in CAT_SANDUCHE
+                    if es_sanduche2 and panes_sub and pan_elegido is None:
+                        st.error("Selecciona el tipo de pan para este sanduche")
                     else:
+                        # Verificar stock receta
+                        sin_stock=[]
                         for ing in rec_v2.get("ingredientes",[]):
                             if ing.get("ref_id","").startswith("ins:"):
                                 ins_id=ing["ref_id"][4:]
                                 ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
-                                if ins_obj:
-                                    bruta=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0))
-                                    db.update_insumo(ins_id,{"stock":max(0,ins_obj.get("stock",0)-bruta)})
-                        db.add_movimiento({"tipo":"venta","receta_id":rec_v2["id"],
-                            "nombre":f"{rec_v2['nombre']}"+(f" x{cant_v}" if cant_v>1 else ""),
-                            "cantidad":cant_v,"fecha":str(fecha_v),"responsable":resp_v or "—","nota":"Venta registrada"})
-                        st.success(f"✅ Venta: {cant_v} × **{rec_v2['nombre']}**"); reload()
+                                if ins_obj and ins_obj.get("stock",0)<calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0)):
+                                    sin_stock.append(ins_obj["nombre"])
+                        # Verificar stock pan si aplica
+                        if pan_elegido:
+                            for pi in pan_elegido.get("ingredientes",[]):
+                                if pi.get("ref_id","").startswith("ins:"):
+                                    pins=next((i for i in insumos if i["id"]==pi["ref_id"][4:]),None)
+                                    if pins:
+                                        pneed=calc.cant_bruta(pi.get("cantidad",pi.get("cant_neta",0))*cant_v,pi.get("merma",0))
+                                        if pins.get("stock",0)<pneed: sin_stock.append(f"{pins['nombre']} (pan)")
+                        if sin_stock: st.error(f"Stock insuficiente: {', '.join(sin_stock)}")
+                        else:
+                            # Descontar insumos del plato
+                            for ing in rec_v2.get("ingredientes",[]):
+                                if ing.get("ref_id","").startswith("ins:"):
+                                    ins_id=ing["ref_id"][4:]
+                                    ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
+                                    if ins_obj:
+                                        bruta=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0))
+                                        db.update_insumo(ins_id,{"stock":max(0,ins_obj.get("stock",0)-bruta)})
+                            # Descontar insumos del pan elegido
+                            pan_nota=""
+                            if pan_elegido:
+                                pan_nota=f" | Pan: {pan_elegido['nombre']}"
+                                for pi in pan_elegido.get("ingredientes",[]):
+                                    if pi.get("ref_id","").startswith("ins:"):
+                                        pins=next((i for i in insumos if i["id"]==pi["ref_id"][4:]),None)
+                                        if pins:
+                                            pbruta=calc.cant_bruta(pi.get("cantidad",pi.get("cant_neta",0))*cant_v,pi.get("merma",0))
+                                            db.update_insumo(pins["id"],{"stock":max(0,pins.get("stock",0)-pbruta)})
+                            db.add_movimiento({"tipo":"venta","receta_id":rec_v2["id"],
+                                "nombre":f"{rec_v2['nombre']}"+(f" x{cant_v}" if cant_v>1 else ""),
+                                "cantidad":cant_v,"fecha":str(fecha_v),"responsable":resp_v or "—",
+                                "nota":f"Venta registrada{pan_nota}",
+                                "pan_id":pan_elegido["id"] if pan_elegido else None})
+                            st.success(f"✅ Venta: {cant_v} × **{rec_v2['nombre']}**{pan_nota}"); reload()
 
     with tab_hist:
         st.subheader("Historial de movimientos")
@@ -1718,6 +1775,72 @@ elif current == "produccion":
                         c3.metric("Tandas a preparar",f"{tandas:.1f}")
                 df_sub_prep=pd.DataFrame(rows_sub_prep)
                 st.download_button("⬇️ Exportar plan de sub-recetas",df_sub_prep.to_csv(index=False).encode("utf-8"),f"subrecetas_plan_{hoy()}.csv","text/csv",use_container_width=True)
+
+            # ── Distribución de pan para SANDUCHES ────────────────────────────
+            sanduches_plan=[r for r in recetas_prod if r.get("categoria") in CAT_SANDUCHE
+                            and st.session_state.porciones_prod.get(r["id"],0)>0]
+            if sanduches_plan and panes_sub:
+                st.markdown("---"); st.subheader("🍞 Distribución de pan para Sanduches")
+                total_sand=sum(st.session_state.porciones_prod.get(r["id"],0) for r in sanduches_plan)
+                st.caption(f"Total sanduches en el plan: **{int(total_sand)}** unidades")
+
+                with st.expander("Ver detalle de sanduches en el plan",expanded=False):
+                    rows_sand=[{"Sanduche":r["nombre"],"Categoría":r.get("categoria",""),
+                                "Porciones":int(st.session_state.porciones_prod.get(r["id"],0))} for r in sanduches_plan]
+                    st.dataframe(pd.DataFrame(rows_sand),hide_index=True,use_container_width=True)
+
+                st.markdown("**Define qué % de sanduches va en cada tipo de pan:**")
+                if "dist_pan" not in st.session_state: st.session_state.dist_pan={}
+
+                cols_pan=st.columns(min(len(panes_sub),4))
+                total_pct=0
+                for i,pan in enumerate(panes_sub):
+                    col=cols_pan[i%len(cols_pan)]
+                    pct=col.number_input(f"🍞 {pan['nombre']}",min_value=0,max_value=100,
+                                         value=int(st.session_state.dist_pan.get(pan["id"],0)),
+                                         step=5,key=f"pan_pct_{pan['id']}",help="% del total de sanduches")
+                    st.session_state.dist_pan[pan["id"]]=pct
+                    total_pct+=pct
+
+                if total_pct==100:   st.success(f"✅ Distribución completa: {total_pct}%")
+                elif total_pct<100:  st.warning(f"⚠️ Distribución: {total_pct}% — faltan {100-total_pct}%")
+                else:                st.error(f"❌ Distribución: {total_pct}% — excede 100%")
+
+                if total_pct>0:
+                    st.markdown("**Insumos de pan necesarios por tipo:**")
+                    rows_pan_total=[]
+                    for pan in panes_sub:
+                        pct=st.session_state.dist_pan.get(pan["id"],0)
+                        if pct<=0: continue
+                        cant_sand_pan=round(total_sand*(pct/100))
+                        rend_pan=pan.get("rendimiento",1) or 1
+                        tandas_pan=cant_sand_pan/rend_pan
+                        with st.expander(f"🍞 {pan['nombre']} — {int(cant_sand_pan)} sanduches ({pct}%) · {tandas_pan:.1f} tanda(s)",expanded=False):
+                            ing_pan=[]
+                            for s_ing in pan.get("ingredientes",[]):
+                                if s_ing.get("ref_id","").startswith("ins:"):
+                                    ins_id=s_ing["ref_id"][4:]; ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
+                                    if ins_obj:
+                                        cant_total=calc.cant_bruta(
+                                            s_ing.get("cantidad",s_ing.get("cant_neta",0))*(cant_sand_pan/rend_pan),
+                                            s_ing.get("merma",0))
+                                        stock_ins=ins_obj.get("stock",0)
+                                        falta_pan=max(0,cant_total-stock_ins)
+                                        costo_pan=falta_pan*ins_obj.get("costo",0)
+                                        ing_pan.append({"Insumo":ins_obj["nombre"],
+                                            "Necesario":f"{fmt_n(round(cant_total,3))} {ins_obj.get('unidad','')}",
+                                            "Stock":f"{fmt_n(stock_ins)} {ins_obj.get('unidad','')}",
+                                            "Faltante":f"{fmt_n(round(falta_pan,3))} {ins_obj.get('unidad','')}",
+                                            "Costo compra":fmt_cop(round(costo_pan)),
+                                            "Estado":"✓ OK" if falta_pan==0 else "⚠️ Comprar"})
+                                        rows_pan_total.append({"Pan":pan["nombre"],"Insumo":ins_obj["nombre"],
+                                            "Cantidad necesaria":round(cant_total,3),"Unidad":ins_obj.get("unidad","")})
+                            if ing_pan: st.dataframe(pd.DataFrame(ing_pan),hide_index=True,use_container_width=True)
+                            else: st.info("Esta sub-receta no tiene insumos directos registrados.")
+                    if rows_pan_total:
+                        st.download_button("⬇️ Exportar insumos de pan",
+                            pd.DataFrame(rows_pan_total).to_csv(index=False).encode("utf-8"),
+                            f"insumos_pan_{hoy()}.csv","text/csv",use_container_width=True)
 
             if not necesidades and not subrecetas_nec:
                 st.info("Ingresa porciones > 0 para ver la proyección.")
