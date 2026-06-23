@@ -381,6 +381,24 @@ def cf_cat(cat=""):
 panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]
 leches_sub    = [s for s in subrecetas if s.get("categoria")==CAT_LECHE_SUB]
 
+def consumo_insumos(ingredientes, mult=1, _prof=0):
+    """Devuelve {ins_id: cantidad_bruta} que consume una lista de ingredientes.
+    Descompone sub-recetas (sub:) en sus insumos según su rendimiento, de forma
+    recursiva (hasta 5 niveles) para que el descuento cubra TODO lo enlazado."""
+    need={}
+    if _prof>5: return need
+    for ing in ingredientes or []:
+        ref=ing.get("ref_id",""); cant=ing.get("cantidad",ing.get("cant_neta",0))*mult
+        if ref.startswith("ins:"):
+            iid=ref[4:]; need[iid]=need.get(iid,0)+calc.cant_bruta(cant,ing.get("merma",0))
+        elif ref.startswith("sub:"):
+            sub=next((s for s in subrecetas if s["id"]==ref[4:]),None)
+            if sub:
+                rend=sub.get("rendimiento",1) or 1
+                for k,v in consumo_insumos(sub.get("ingredientes",[]),cant/rend,_prof+1).items():
+                    need[k]=need.get(k,0)+v
+    return need
+
 def kpi(col,val,lbl,t=""):
     col.markdown(f'<div class="kpi-box {t}"><div class="kpi-val">{val}</div><div class="kpi-lbl">{lbl}</div></div>',
                  unsafe_allow_html=True)
@@ -1276,16 +1294,16 @@ elif current == "movimientos":
 
                 ct=calc.costo_receta(rec_v,insumos,subrecetas,cf_cat(rec_v.get("categoria","")))
                 precio=(rec_v.get("precio",0) or 0)
-                st.markdown("**Insumos del plato que se descontarán:**")
-                for ing in rec_v.get("ingredientes",[]):
-                    if ing.get("ref_id","").startswith("ins:"):
-                        ins_id=ing["ref_id"][4:]
-                        ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
-                        if ins_obj:
-                            need=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0))
-                            disp=ins_obj.get("stock",0); ok=disp>=need
-                            color="green" if ok else "red"
-                            st.markdown(f":{color}[{'✓' if ok else '⚠️'}] **{ins_obj['nombre']}**: -{fmt_n(round(need,3))} {ins_obj.get('unidad','')} (disponible: {fmt_n(disp)})")
+                st.markdown("**Insumos del plato que se descontarán** (incluye sub-recetas):")
+                need_prev=consumo_insumos(rec_v.get("ingredientes",[]),cant_v)
+                if not need_prev:
+                    st.caption("Esta receta no tiene insumos directos enlazados.")
+                for iid,qty in need_prev.items():
+                    ins_obj=next((i for i in insumos if i["id"]==iid),None)
+                    if ins_obj:
+                        disp=ins_obj.get("stock",0); ok=disp>=qty
+                        color="green" if ok else "red"
+                        st.markdown(f":{color}[{'✓' if ok else '⚠️'}] **{ins_obj['nombre']}**: -{fmt_n(round(qty,3))} {ins_obj.get('unidad','')} (disponible: {fmt_n(disp)})")
                 st.info(f"Costo: **{fmt_cop(round(ct*cant_v))}** | Venta: **{fmt_cop(round(precio*cant_v))}** | Margen: **{f'{(precio-ct)/precio*100:.1f}%' if precio>0 else '—'}**")
 
             if st.button("✅ Registrar venta",type="primary",use_container_width=True):
@@ -1299,60 +1317,28 @@ elif current == "movimientos":
                     elif req_leche2 and leches_sub and leche_elegida is None:
                         st.error("Selecciona el tipo de leche para esta bebida")
                     else:
-                        # Verificar stock receta
-                        sin_stock=[]
-                        for ing in rec_v2.get("ingredientes",[]):
-                            if ing.get("ref_id","").startswith("ins:"):
-                                ins_id=ing["ref_id"][4:]
-                                ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
-                                if ins_obj and ins_obj.get("stock",0)<calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0)):
-                                    sin_stock.append(ins_obj["nombre"])
-                        # Verificar stock pan si aplica
+                        # Necesidad TOTAL de insumos = plato + pan + leche (descompone sub-recetas)
+                        need=consumo_insumos(rec_v2.get("ingredientes",[]),cant_v)
                         if pan_elegido:
-                            for pi in pan_elegido.get("ingredientes",[]):
-                                if pi.get("ref_id","").startswith("ins:"):
-                                    pins=next((i for i in insumos if i["id"]==pi["ref_id"][4:]),None)
-                                    if pins:
-                                        pneed=calc.cant_bruta(pi.get("cantidad",pi.get("cant_neta",0))*cant_v,pi.get("merma",0))
-                                        if pins.get("stock",0)<pneed: sin_stock.append(f"{pins['nombre']} (pan)")
-                        # Verificar stock leche si aplica
+                            for k,v in consumo_insumos(pan_elegido.get("ingredientes",[]),cant_v).items(): need[k]=need.get(k,0)+v
                         if leche_elegida:
-                            for li in leche_elegida.get("ingredientes",[]):
-                                if li.get("ref_id","").startswith("ins:"):
-                                    lins=next((i for i in insumos if i["id"]==li["ref_id"][4:]),None)
-                                    if lins:
-                                        lneed=calc.cant_bruta(li.get("cantidad",li.get("cant_neta",0))*cant_v,li.get("merma",0))
-                                        if lins.get("stock",0)<lneed: sin_stock.append(f"{lins['nombre']} (leche)")
-                        if sin_stock: st.error(f"Stock insuficiente: {', '.join(sin_stock)}")
+                            for k,v in consumo_insumos(leche_elegida.get("ingredientes",[]),cant_v).items(): need[k]=need.get(k,0)+v
+                        # Verificar stock de todo lo enlazado
+                        sin_stock=[]
+                        for iid,qty in need.items():
+                            ins_obj=next((i for i in insumos if i["id"]==iid),None)
+                            if ins_obj and ins_obj.get("stock",0)<qty:
+                                falta=qty-ins_obj.get("stock",0)
+                                sin_stock.append(f"{ins_obj['nombre']} (faltan {fmt_n(round(falta,3))} {ins_obj.get('unidad','')})")
+                        if sin_stock: st.error("⚠️ Stock insuficiente: "+", ".join(sin_stock))
                         else:
-                            # Descontar insumos del plato
-                            for ing in rec_v2.get("ingredientes",[]):
-                                if ing.get("ref_id","").startswith("ins:"):
-                                    ins_id=ing["ref_id"][4:]
-                                    ins_obj=next((i for i in insumos if i["id"]==ins_id),None)
-                                    if ins_obj:
-                                        bruta=calc.cant_bruta(ing.get("cantidad", ing.get("cant_neta", 0))*cant_v,ing.get("merma",0))
-                                        db.update_insumo(ins_id,{"stock":max(0,ins_obj.get("stock",0)-bruta)})
-                            # Descontar insumos del pan elegido
-                            pan_nota=""
-                            if pan_elegido:
-                                pan_nota=f" | Pan: {pan_elegido['nombre']}"
-                                for pi in pan_elegido.get("ingredientes",[]):
-                                    if pi.get("ref_id","").startswith("ins:"):
-                                        pins=next((i for i in insumos if i["id"]==pi["ref_id"][4:]),None)
-                                        if pins:
-                                            pbruta=calc.cant_bruta(pi.get("cantidad",pi.get("cant_neta",0))*cant_v,pi.get("merma",0))
-                                            db.update_insumo(pins["id"],{"stock":max(0,pins.get("stock",0)-pbruta)})
-                            # Descontar insumos de la leche elegida
-                            leche_nota=""
-                            if leche_elegida:
-                                leche_nota=f" | Leche: {leche_elegida['nombre']}"
-                                for li in leche_elegida.get("ingredientes",[]):
-                                    if li.get("ref_id","").startswith("ins:"):
-                                        lins=next((i for i in insumos if i["id"]==li["ref_id"][4:]),None)
-                                        if lins:
-                                            lbruta=calc.cant_bruta(li.get("cantidad",li.get("cant_neta",0))*cant_v,li.get("merma",0))
-                                            db.update_insumo(lins["id"],{"stock":max(0,lins.get("stock",0)-lbruta)})
+                            # Descontar TODO el inventario enlazado de una vez
+                            for iid,qty in need.items():
+                                ins_obj=next((i for i in insumos if i["id"]==iid),None)
+                                if ins_obj:
+                                    db.update_insumo(iid,{"stock":max(0,ins_obj.get("stock",0)-qty)})
+                            pan_nota=f" | Pan: {pan_elegido['nombre']}" if pan_elegido else ""
+                            leche_nota=f" | Leche: {leche_elegida['nombre']}" if leche_elegida else ""
                             db.add_movimiento({"tipo":"venta","receta_id":rec_v2["id"],
                                 "nombre":f"{rec_v2['nombre']}"+(f" x{cant_v}" if cant_v>1 else ""),
                                 "cantidad":cant_v,"fecha":str(fecha_v),"responsable":resp_v or "—",
