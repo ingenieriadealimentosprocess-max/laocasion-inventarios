@@ -321,6 +321,10 @@ PAGES = {
     "⚙️ Configuración":         "config",
 }
 
+def ir_a(nombre_pagina):
+    """Callback para navegar a otra página del menú por código (sin scroll)."""
+    st.session_state.nav_page = nombre_pagina
+
 with st.sidebar:
     st.markdown("""
     <div style='padding:20px 16px 12px'>
@@ -332,7 +336,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     st.divider()
-    page = st.radio("Módulos", list(PAGES.keys()), label_visibility="collapsed")
+    page = st.radio("Módulos", list(PAGES.keys()), label_visibility="collapsed", key="nav_page")
     st.divider()
     st.markdown(f"<div style='font-size:11px;color:rgba(245,239,224,0.5);padding:0 4px'>📅 {date.today().strftime('%d/%m/%Y')}</div>",
                 unsafe_allow_html=True)
@@ -764,6 +768,11 @@ elif current == "recetas":
 
     with tab_cf:
         st.subheader("Costos fijos de cocina")
+        st.button("⚙️ Configurar costos fijos rubro por rubro →",type="primary",
+                  use_container_width=True,on_click=ir_a,args=("⚙️ Configuración",),
+                  help="Te lleva a Configuración → Costos Fijos para agregar/editar cada rubro y las ventas esperadas.")
+        st.caption("Esta pestaña es solo de consulta. Los rubros se agregan y editan en **⚙️ Configuración**.")
+        st.markdown("")
         # Resumen del % actual
         if cf_items and ventas_esperadas>0:
             _tot_act=sum(float(i.get("monto",0)) for i in cf_items if i.get("activo",True))
