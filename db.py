@@ -5,6 +5,7 @@ import streamlit as st
 from supabase import create_client, Client
 from datetime import date
 import uuid
+import re
 
 
 @st.cache_resource
@@ -20,6 +21,33 @@ def uid():
 
 def hoy():
     return str(date.today())
+
+
+def _missing_column(err, data):
+    """Si el error de Supabase/PostgREST es por una columna inexistente que está
+    en `data`, devuelve el dict sin esa columna. Si no aplica, devuelve None."""
+    msg = str(err)
+    m = re.search(r"'([^']+)' column", msg) or re.search(r'column "([^"]+)"', msg)
+    if not m:
+        return None
+    col = m.group(1)
+    if col in data:
+        return {k: v for k, v in data.items() if k != col}
+    return None
+
+
+def _safe_write(fn, data):
+    """Ejecuta fn(data). Si PostgREST rechaza por una columna que aún no existe
+    en la base (ej. una columna nueva sin migrar), la quita y reintenta, de modo
+    que el guardado no falle. Cualquier otro error se propaga normalmente."""
+    while True:
+        try:
+            return fn(data)
+        except Exception as e:
+            reduced = _missing_column(e, data)
+            if reduced is None:
+                raise
+            data = reduced
 
 
 # ── INSUMOS ──────────────────────────────────────────────────────────────────
@@ -53,11 +81,11 @@ def add_receta(data: dict):
     data["id"] = uid()
     data.setdefault("creado_en", hoy())
     data.setdefault("ingredientes", [])
-    get_client().table("recetas").insert(data).execute()
+    _safe_write(lambda d: get_client().table("recetas").insert(d).execute(), data)
 
 
 def update_receta(id: str, data: dict):
-    get_client().table("recetas").update(data).eq("id", id).execute()
+    _safe_write(lambda d: get_client().table("recetas").update(d).eq("id", id).execute(), data)
 
 
 def delete_receta(id: str):
@@ -103,7 +131,7 @@ def get_movimientos(limit=500):
 def add_movimiento(data: dict):
     data["id"] = uid()
     data.setdefault("fecha", hoy())
-    get_client().table("movimientos").insert(data).execute()
+    _safe_write(lambda d: get_client().table("movimientos").insert(d).execute(), data)
 
 
 def update_movimiento(id: str, data: dict):
