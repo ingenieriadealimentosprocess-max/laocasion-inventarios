@@ -358,7 +358,9 @@ data       = load_all()
 insumos    = data["insumos"];   recetas    = data["recetas"]
 subrecetas = data["subrecetas"]; movs       = data["movs"]
 bajas      = data["bajas"];     cfg        = data["config"]
-cf_items   = data["cf_items"]
+_cf_raw    = data["cf_items"]
+cf_table_ok = _cf_raw is not None      # False = falta correr el SQL en Supabase
+cf_items   = _cf_raw or []
 umbral_precio    = float(cfg.get("umbral_precio",3))
 ventas_esperadas = float(cfg.get("ventas_esperadas",0))
 _cf_default = float(cfg.get("costos_fijos",15))
@@ -953,6 +955,25 @@ elif current == "subrecetas":
     tab_list,tab_add,tab_imp,tab_exp=st.tabs(["📋 Listado","➕ Nueva","📥 Importar","📤 Exportar"])
 
     with tab_add:
+        # ── Atajo: crear los panes de sanduche ──
+        PANES_SANDUCHE=["Croissant La O","Croissant tradicional","Porción pan baguette",
+                        "Porción pan masa madre","Bagel"]
+        _panes_existentes={(s.get("nombre") or "").strip().lower() for s in subrecetas
+                           if s.get("categoria")==CAT_PAN_SUB}
+        _panes_faltan=[p for p in PANES_SANDUCHE if p.lower() not in _panes_existentes]
+        if _panes_faltan:
+            with st.expander(f"🍞 Crear panes de sanduche ({len(_panes_faltan)} faltan)",expanded=False):
+                st.caption("Crea los tipos de pan que el cliente puede elegir en los sanduches. "
+                           "Se crean vacíos (sin ingredientes) para que el selector funcione de inmediato; "
+                           "luego edita cada uno y agrégale sus insumos para que descuente del inventario.")
+                st.write("• "+"  \n• ".join(_panes_faltan))
+                if st.button("🍞 Crear estos panes",use_container_width=True):
+                    for p in _panes_faltan:
+                        db.add_subreceta({"nombre":p,"categoria":CAT_PAN_SUB,"rendimiento":1,
+                                          "unidad_rendimiento":"unidad","ingredientes":[]})
+                    st.success(f"✅ {len(_panes_faltan)} pan(es) creado(s) con categoría «{CAT_PAN_SUB}». "
+                               "Edítalos para agregar sus ingredientes."); reload()
+
         if not insumos: st.warning("Agrega insumos primero.")
         else:
             n_s=st.text_input("Nombre de la sub-receta *")
@@ -2380,9 +2401,31 @@ elif current == "config":
     # ── TAB COSTOS FIJOS ──────────────────────────────────────────────────────
     with tab_cf_cfg:
         st.subheader("Costos fijos del negocio")
-        st.caption("Registra cada costo fijo mensual (arriendo, servicios, salarios, etc.). "
-                   "El sistema calcula automáticamente el % a aplicar en recetas. "
-                   "⚠️ Las bebidas NO cargan costos fijos: se costean solo con materia prima + margen.")
+
+        # ── Detección: ¿falta crear la tabla en Supabase? ──
+        if not cf_table_ok:
+            st.error("⚠️ **Falta activar la base de datos de costos fijos.** "
+                     "La tabla todavía no existe en Supabase, por eso no se pueden guardar los rubros.")
+            st.markdown("**Solución (1 sola vez):** copia este código, pégalo en el "
+                        "**SQL Editor** de Supabase y dale **RUN**. Luego vuelve aquí y pulsa *Ya lo ejecuté*.")
+            st.code(
+"""-- Activar costos fijos en La Ocasión
+CREATE TABLE IF NOT EXISTS costos_fijos_items (
+    id TEXT PRIMARY KEY,
+    nombre TEXT NOT NULL,
+    monto NUMERIC DEFAULT 0,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+ALTER TABLE config ADD COLUMN IF NOT EXISTS ventas_esperadas NUMERIC DEFAULT 0;
+ALTER TABLE movimientos ADD COLUMN IF NOT EXISTS pan_id TEXT;""",
+                language="sql")
+            st.link_button("🔗 Abrir SQL Editor de Supabase","https://supabase.com/dashboard/project/_/sql/new",
+                           use_container_width=True)
+            if st.button("✅ Ya lo ejecuté — recargar",type="primary",use_container_width=True):
+                reload()
+            st.stop()
 
         st.info("ℹ️ Los costos fijos se aplican **solo a las recetas de comida**. "
                 "Las **bebidas no cargan costos fijos**: se costean con materia prima + margen.")

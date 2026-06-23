@@ -180,10 +180,14 @@ def update_config(costos_fijos: float, umbral_precio: float, ventas_esperadas: f
 # ── COSTOS FIJOS ITEMS ────────────────────────────────────────────────────────
 
 def get_costos_fijos_items():
+    """Retorna la lista de costos fijos.
+    None  -> la tabla no existe / no es accesible (falta correr el SQL)
+    []    -> la tabla existe pero está vacía
+    [...] -> hay rubros registrados"""
     try:
         return get_client().table("costos_fijos_items").select("*").order("nombre").execute().data or []
     except Exception:
-        return []
+        return None
 
 
 def add_costo_fijo(data: dict):
