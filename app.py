@@ -963,14 +963,17 @@ elif current == "recetas":
                             for _, row in edited_ing.iterrows():
                                 if bool(row.get("🗑️ Quitar")): continue
                                 nombre_sel = row.get("Ingrediente","")
-                                if not nombre_sel: continue
+                                if pd.isna(nombre_sel) or not nombre_sel: continue
                                 ref_id = opts_rec.get(nombre_sel, "")
                                 if not ref_id: continue
+                                _cant  = row.get("Cant. neta"); _merma = row.get("Merma %")
+                                _cant  = 0.0 if pd.isna(_cant)  else float(_cant)
+                                _merma = 0.0 if pd.isna(_merma) else float(_merma)
                                 nuevos_ing.append({
                                     "ref_id":    ref_id,
-                                    "cantidad":  float(row["Cant. neta"] or 0),
-                                    "cant_neta": float(row["Cant. neta"] or 0),
-                                    "merma":     float(row["Merma %"] or 0),
+                                    "cantidad":  _cant,
+                                    "cant_neta": _cant,
+                                    "merma":     _merma,
                                 })
                             db.update_receta(rec["id"], {"ingredientes": nuevos_ing, "requiere_leche": req_leche_e})
                             st.success("✅ Ingredientes actualizados"); reload()
@@ -1155,14 +1158,17 @@ elif current == "subrecetas":
                             for _, row in edited_si.iterrows():
                                 if bool(row.get("🗑️ Quitar")): continue
                                 nombre_sel = row.get("Ingrediente","")
-                                if not nombre_sel: continue
+                                if pd.isna(nombre_sel) or not nombre_sel: continue
                                 ref_id = opts_sub.get(nombre_sel, "")
                                 if not ref_id: continue
+                                _cant  = row.get("Cant. neta"); _merma = row.get("Merma %")
+                                _cant  = 0.0 if pd.isna(_cant)  else float(_cant)
+                                _merma = 0.0 if pd.isna(_merma) else float(_merma)
                                 nuevos_si.append({
                                     "ref_id":    ref_id,
-                                    "cantidad":  float(row["Cant. neta"] or 0),
-                                    "cant_neta": float(row["Cant. neta"] or 0),
-                                    "merma":     float(row["Merma %"] or 0),
+                                    "cantidad":  _cant,
+                                    "cant_neta": _cant,
+                                    "merma":     _merma,
                                 })
                             db.update_subreceta(sub["id"], {"ingredientes": nuevos_si})
                             st.success("✅ Ingredientes actualizados"); reload()
