@@ -932,6 +932,7 @@ elif current == "recetas":
                             rid   = ing.get("ref_id","")
                             disp  = next((k for k,v in opts_rec.items() if v==rid), ref["nombre"])
                             rows_ing.append({
+                                "🗑️ Quitar":  False,
                                 "Ingrediente": disp,
                                 "Cant. neta":  float(cant),
                                 "Merma %":     float(merma),
@@ -939,12 +940,14 @@ elif current == "recetas":
                                 "Unidad":      ref["unidad"],
                                 "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
                             })
+                        st.caption("Para **eliminar** un ingrediente: marca su casilla **🗑️ Quitar** y pulsa Guardar.")
                         edited_ing = st.data_editor(
-                            pd.DataFrame(rows_ing) if rows_ing else pd.DataFrame(columns=["Ingrediente","Cant. neta","Merma %","Cant. bruta","Unidad","Costo"]),
+                            pd.DataFrame(rows_ing) if rows_ing else pd.DataFrame(columns=["🗑️ Quitar","Ingrediente","Cant. neta","Merma %","Cant. bruta","Unidad","Costo"]),
                             hide_index=True,
                             use_container_width=True,
                             num_rows="dynamic",
                             column_config={
+                                "🗑️ Quitar":  st.column_config.CheckboxColumn("🗑️ Quitar", default=False, width="small"),
                                 "Ingrediente": st.column_config.SelectboxColumn("Ingrediente", options=opts_names_rec, required=True, width="large"),
                                 "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f", min_value=0),
                                 "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
@@ -958,6 +961,7 @@ elif current == "recetas":
                         if ri_c1.button("💾 Guardar ingredientes", type="primary", key=f"save_rec_{rec['id']}"):
                             nuevos_ing = []
                             for _, row in edited_ing.iterrows():
+                                if bool(row.get("🗑️ Quitar")): continue
                                 nombre_sel = row.get("Ingrediente","")
                                 if not nombre_sel: continue
                                 ref_id = opts_rec.get(nombre_sel, "")
@@ -1120,6 +1124,7 @@ elif current == "subrecetas":
                             rid   = ing.get("ref_id","")
                             disp  = next((k for k,v in opts_sub.items() if v==rid), ref["nombre"])
                             rows_si.append({
+                                "🗑️ Quitar":  False,
                                 "Ingrediente": disp,
                                 "Cant. neta":  float(cant),
                                 "Merma %":     float(merma),
@@ -1127,12 +1132,14 @@ elif current == "subrecetas":
                                 "Unidad":      ref.get("unidad",""),
                                 "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
                             })
+                        st.caption("Para **eliminar** un ingrediente: marca su casilla **🗑️ Quitar** y pulsa Guardar.")
                         edited_si = st.data_editor(
-                            pd.DataFrame(rows_si) if rows_si else pd.DataFrame(columns=["Ingrediente","Cant. neta","Merma %","Cant. bruta","Unidad","Costo"]),
+                            pd.DataFrame(rows_si) if rows_si else pd.DataFrame(columns=["🗑️ Quitar","Ingrediente","Cant. neta","Merma %","Cant. bruta","Unidad","Costo"]),
                             hide_index=True,
                             use_container_width=True,
                             num_rows="dynamic",
                             column_config={
+                                "🗑️ Quitar":  st.column_config.CheckboxColumn("🗑️ Quitar", default=False, width="small"),
                                 "Ingrediente": st.column_config.SelectboxColumn("Ingrediente", options=opts_names_sub, required=True, width="large"),
                                 "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f", min_value=0),
                                 "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
@@ -1146,6 +1153,7 @@ elif current == "subrecetas":
                         if si_c1.button("💾 Guardar ingredientes", type="primary", key=f"save_sub_{sub['id']}"):
                             nuevos_si = []
                             for _, row in edited_si.iterrows():
+                                if bool(row.get("🗑️ Quitar")): continue
                                 nombre_sel = row.get("Ingrediente","")
                                 if not nombre_sel: continue
                                 ref_id = opts_sub.get(nombre_sel, "")
