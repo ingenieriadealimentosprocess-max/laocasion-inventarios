@@ -1,0 +1,11 @@
+# Secretos (claves de Supabase, contraseña de la app) — NUNCA subir
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Sistema
+.DS_Store
+Thumbs.db

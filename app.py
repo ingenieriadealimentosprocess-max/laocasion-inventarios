@@ -301,6 +301,7 @@ TURNOS     = ["Mañana","Tarde","Noche"]
 CAT_RECETA    = ["Plato Principal","Entrada","Postre","Bebida","Brunch","Panadería","Pastelería","Especial","Sanduches Salados","Sanduches Dulces"]
 CAT_SANDUCHE  = ["Sanduches Salados","Sanduches Dulces"]   # recetas que requieren elección de pan
 CAT_PAN_SUB   = "Tipo de pan"                              # categoría de sub-recetas que son bases de pan
+CAT_LECHE_SUB = "Tipo de leche"                            # categoría de sub-recetas que son opciones de leche
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  NAVEGACIÓN
@@ -362,9 +363,14 @@ umbral_precio    = float(cfg.get("umbral_precio",3))
 ventas_esperadas = float(cfg.get("ventas_esperadas",0))
 _cf_default = float(cfg.get("costos_fijos",15))
 
+CAT_SIN_CF = ["Bebida"]   # categorías que NO cargan costos fijos (se costean solo con materia prima + margen)
+
 def cf_cat(cat=""):
     """Retorna el % de costos fijos para la categoría de receta dada.
-    Suma ítems activos que aplican a 'Todas' o exactamente a esa categoría."""
+    Suma ítems activos que aplican a 'Todas' o exactamente a esa categoría.
+    Las categorías en CAT_SIN_CF (ej. Bebida) quedan exentas: retornan 0%."""
+    if cat in CAT_SIN_CF:
+        return 0.0
     if not cf_items or ventas_esperadas<=0:
         return _cf_default
     items=[i for i in cf_items if i.get("activo",True)
@@ -374,6 +380,7 @@ def cf_cat(cat=""):
 
 costos_fijos = cf_cat()   # % global (para referencias generales, usa "Todas")
 panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]
+leches_sub    = [s for s in subrecetas if s.get("categoria")==CAT_LECHE_SUB]
 
 def kpi(col,val,lbl,t=""):
     col.markdown(f'<div class="kpi-box {t}"><div class="kpi-val">{val}</div><div class="kpi-lbl">{lbl}</div></div>',
@@ -774,6 +781,8 @@ elif current == "recetas":
             cat_r=rc1.selectbox("Categoría",CAT_RECETA)
             porc_r=rc2.number_input("Porciones",min_value=1,value=1)
             prec_r=rc3.number_input("Precio de venta (COP)",min_value=0.0,step=1000.0)
+            req_leche_r=st.checkbox("🥛 Lleva leche (el cliente elige el tipo al vender)",
+                help="Marca esto en bebidas con leche. NO incluyas la leche en los ingredientes: se elige y se descuenta al registrar la venta.")
             st.markdown("**Ingredientes**")
             if "ing_rows" not in st.session_state: st.session_state.ing_rows=[{}]
             opts_ing={}
@@ -799,7 +808,7 @@ elif current == "recetas":
                 if not n_r.strip(): st.error("El nombre es obligatorio")
                 elif not ing_data: st.error("Agrega al menos un ingrediente")
                 else:
-                    db.add_receta({"nombre":n_r.strip(),"categoria":cat_r,"porciones":porc_r,"precio":prec_r,"ingredientes":ing_data})
+                    db.add_receta({"nombre":n_r.strip(),"categoria":cat_r,"porciones":porc_r,"precio":prec_r,"ingredientes":ing_data,"requiere_leche":req_leche_r})
                     st.session_state.ing_rows=[{}]; st.success(f"✅ Receta guardada: {n_r}"); reload()
 
     with tab_imp:
@@ -877,6 +886,13 @@ elif current == "recetas":
                         mc3.metric("Costo total",        fmt_cop(round(ct)))
                         mc4.metric("Margen",             margen_txt)
 
+                        # ── opción: lleva leche (cliente elige tipo al vender) ──
+                        req_leche_e = st.checkbox(
+                            "🥛 Lleva leche (el cliente elige el tipo al vender)",
+                            value=bool(rec.get("requiere_leche")),
+                            key=f"reqleche_{rec['id']}",
+                            help="Bebida con leche: NO incluyas la leche en los ingredientes; se elige y descuenta en la venta.")
+
                         # ── editor de ingredientes ──────────────────────────
                         st.markdown("**✏️ Ingredientes** — edita cantidades, merma, cambia o agrega ingredientes:")
                         ing_list = rec.get("ingredientes", [])
@@ -925,7 +941,7 @@ elif current == "recetas":
                                     "cant_neta": float(row["Cant. neta"] or 0),
                                     "merma":     float(row["Merma %"] or 0),
                                 })
-                            db.update_receta(rec["id"], {"ingredientes": nuevos_ing})
+                            db.update_receta(rec["id"], {"ingredientes": nuevos_ing, "requiere_leche": req_leche_e})
                             st.success("✅ Ingredientes actualizados"); reload()
                         if ri_c2.button("🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
                             db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
@@ -943,7 +959,7 @@ elif current == "subrecetas":
         else:
             n_s=st.text_input("Nombre de la sub-receta *")
             sc1,sc2,sc3=st.columns(3)
-            cat_s=sc1.selectbox("Categoría",["Base","Salsa","Aliño","Masa","Relleno","Pastelería","Panadería","Tipo de pan","Otro"])
+            cat_s=sc1.selectbox("Categoría",["Base","Salsa","Aliño","Masa","Relleno","Pastelería","Panadería","Tipo de pan","Tipo de leche","Otro"])
             rend_s=sc2.number_input("Rendimiento",min_value=0.01,step=1.0)
             u_s=sc3.selectbox("Unidad rendimiento",UNIDADES)
             st.markdown("**Ingredientes**")
@@ -1188,8 +1204,9 @@ elif current == "movimientos":
             vc1,vc2=st.columns(2)
             fecha_v=vc1.date_input("Fecha",value=date.today()); resp_v=vc2.text_input("Responsable")
 
-            # ── Selector de pan (solo para sanduches) ─────────────────────────
+            # ── Selectores de variantes (pan / leche) ─────────────────────────
             pan_elegido=None
+            leche_elegida=None
             if sel_v!="— Selecciona —":
                 rec_v=opts_v[sel_v]
                 es_sanduche=rec_v.get("categoria") in CAT_SANDUCHE
@@ -1215,6 +1232,29 @@ elif current == "movimientos":
                                         st.markdown(f"  :{color}[{'✓' if pok else '⚠️'}] {pins['nombre']}: -{fmt_n(round(pneed,3))} {pins.get('unidad','')}")
                         st.markdown("---")
 
+                # ── Selector de leche (bebidas que llevan leche) ──────────────────
+                if rec_v.get("requiere_leche"):
+                    if not leches_sub:
+                        st.warning("⚠️ No hay sub-recetas con categoría **'Tipo de leche'** registradas. "
+                                   "Ve a Sub-recetas → ➕ Nueva y agrégalas con esa categoría.")
+                    else:
+                        st.markdown("---")
+                        opts_leche={"— Selecciona leche —":None}
+                        for l in leches_sub: opts_leche[f"🥛 {l['nombre']}  ×{cant_v}"]=l
+                        sel_leche=st.selectbox("🥛 Tipo de leche *",list(opts_leche.keys()),key="sel_leche_v")
+                        leche_elegida=opts_leche[sel_leche]
+                        if leche_elegida:
+                            st.caption("Ingredientes de la leche que también se descontarán:")
+                            for li in leche_elegida.get("ingredientes",[]):
+                                if li.get("ref_id","").startswith("ins:"):
+                                    lins=next((i for i in insumos if i["id"]==li["ref_id"][4:]),None)
+                                    if lins:
+                                        lneed=calc.cant_bruta(li.get("cantidad",li.get("cant_neta",0))*cant_v,li.get("merma",0))
+                                        lok=lins.get("stock",0)>=lneed
+                                        color="green" if lok else "red"
+                                        st.markdown(f"  :{color}[{'✓' if lok else '⚠️'}] {lins['nombre']}: -{fmt_n(round(lneed,3))} {lins.get('unidad','')}")
+                        st.markdown("---")
+
                 ct=calc.costo_receta(rec_v,insumos,subrecetas,cf_cat(rec_v.get("categoria","")))
                 precio=(rec_v.get("precio",0) or 0)
                 st.markdown("**Insumos del plato que se descontarán:**")
@@ -1234,8 +1274,11 @@ elif current == "movimientos":
                 else:
                     rec_v2=opts_v[sel_v]
                     es_sanduche2=rec_v2.get("categoria") in CAT_SANDUCHE
+                    req_leche2=bool(rec_v2.get("requiere_leche"))
                     if es_sanduche2 and panes_sub and pan_elegido is None:
                         st.error("Selecciona el tipo de pan para este sanduche")
+                    elif req_leche2 and leches_sub and leche_elegida is None:
+                        st.error("Selecciona el tipo de leche para esta bebida")
                     else:
                         # Verificar stock receta
                         sin_stock=[]
@@ -1253,6 +1296,14 @@ elif current == "movimientos":
                                     if pins:
                                         pneed=calc.cant_bruta(pi.get("cantidad",pi.get("cant_neta",0))*cant_v,pi.get("merma",0))
                                         if pins.get("stock",0)<pneed: sin_stock.append(f"{pins['nombre']} (pan)")
+                        # Verificar stock leche si aplica
+                        if leche_elegida:
+                            for li in leche_elegida.get("ingredientes",[]):
+                                if li.get("ref_id","").startswith("ins:"):
+                                    lins=next((i for i in insumos if i["id"]==li["ref_id"][4:]),None)
+                                    if lins:
+                                        lneed=calc.cant_bruta(li.get("cantidad",li.get("cant_neta",0))*cant_v,li.get("merma",0))
+                                        if lins.get("stock",0)<lneed: sin_stock.append(f"{lins['nombre']} (leche)")
                         if sin_stock: st.error(f"Stock insuficiente: {', '.join(sin_stock)}")
                         else:
                             # Descontar insumos del plato
@@ -1273,12 +1324,22 @@ elif current == "movimientos":
                                         if pins:
                                             pbruta=calc.cant_bruta(pi.get("cantidad",pi.get("cant_neta",0))*cant_v,pi.get("merma",0))
                                             db.update_insumo(pins["id"],{"stock":max(0,pins.get("stock",0)-pbruta)})
+                            # Descontar insumos de la leche elegida
+                            leche_nota=""
+                            if leche_elegida:
+                                leche_nota=f" | Leche: {leche_elegida['nombre']}"
+                                for li in leche_elegida.get("ingredientes",[]):
+                                    if li.get("ref_id","").startswith("ins:"):
+                                        lins=next((i for i in insumos if i["id"]==li["ref_id"][4:]),None)
+                                        if lins:
+                                            lbruta=calc.cant_bruta(li.get("cantidad",li.get("cant_neta",0))*cant_v,li.get("merma",0))
+                                            db.update_insumo(lins["id"],{"stock":max(0,lins.get("stock",0)-lbruta)})
                             db.add_movimiento({"tipo":"venta","receta_id":rec_v2["id"],
                                 "nombre":f"{rec_v2['nombre']}"+(f" x{cant_v}" if cant_v>1 else ""),
                                 "cantidad":cant_v,"fecha":str(fecha_v),"responsable":resp_v or "—",
-                                "nota":f"Venta registrada{pan_nota}",
+                                "nota":f"Venta registrada{pan_nota}{leche_nota}",
                                 "pan_id":pan_elegido["id"] if pan_elegido else None})
-                            st.success(f"✅ Venta: {cant_v} × **{rec_v2['nombre']}**{pan_nota}"); reload()
+                            st.success(f"✅ Venta: {cant_v} × **{rec_v2['nombre']}**{pan_nota}{leche_nota}"); reload()
 
     with tab_hist:
         st.subheader("Historial de movimientos")
@@ -2322,9 +2383,30 @@ elif current == "config":
     with tab_cf_cfg:
         st.subheader("Costos fijos del negocio")
         st.caption("Registra cada costo fijo mensual (arriendo, servicios, salarios, etc.). "
-                   "El sistema calcula automáticamente el % a aplicar en recetas.")
+                   "El sistema calcula automáticamente el % a aplicar en recetas. "
+                   "⚠️ Las bebidas NO cargan costos fijos: se costean solo con materia prima + margen.")
 
-        _cats_cf=["Todas"]+CAT_RECETA
+        # Categorías a las que se puede dirigir un costo fijo (las bebidas quedan exentas)
+        _cats_cf=["Todas"]+[c for c in CAT_RECETA if c not in CAT_SIN_CF]
+
+        # ── Pre-cargar lista de rubros sugeridos ──
+        RUBROS_SUGERIDOS=[
+            "Arriendo del local","Energía eléctrica","Agua y alcantarillado","Gas",
+            "Internet / teléfono","Nómina fija + prestaciones","Mantenimiento de equipos",
+            "Depreciación de equipos y menaje","Seguros","Licencias e impuestos fijos",
+            "Contador / administración","Aseo y cafetería","Software / POS / facturación",
+            "Publicidad / marketing fijo","Dotación y uniformes",
+        ]
+        _existentes={(i.get("nombre") or "").strip().lower() for i in cf_items}
+        _faltantes=[r for r in RUBROS_SUGERIDOS if r.lower() not in _existentes]
+        if _faltantes:
+            cpc1,cpc2=st.columns([3,2])
+            cpc1.caption(f"💡 Hay {len(_faltantes)} rubro(s) sugerido(s) sin registrar. "
+                         "Se agregan en $0 para que solo edites los montos.")
+            if cpc2.button("📋 Cargar rubros sugeridos",use_container_width=True):
+                for r in _faltantes:
+                    db.add_costo_fijo({"nombre":r,"monto":0,"categoria":"Todas","activo":True})
+                st.success(f"✅ {len(_faltantes)} rubro(s) agregado(s) en $0. Edita los montos abajo."); reload()
 
         # ── Agregar nuevo ítem ──
         with st.expander("➕ Agregar costo fijo",expanded=not cf_items):

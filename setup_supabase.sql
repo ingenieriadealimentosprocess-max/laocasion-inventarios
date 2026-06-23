@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS recetas (
   porciones   INT DEFAULT 1,
   precio      FLOAT DEFAULT 0,
   ingredientes JSONB DEFAULT '[]',
+  requiere_leche BOOLEAN DEFAULT false,   -- bebidas que llevan leche (cliente elige tipo al vender)
   creado_en   DATE
 );
 
@@ -101,3 +102,29 @@ CREATE POLICY "allow_all_subrecetas" ON subrecetas FOR ALL USING (true) WITH CHE
 CREATE POLICY "allow_all_movimientos" ON movimientos FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_bajas"      ON bajas      FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "allow_all_config"     ON config     FOR ALL USING (true) WITH CHECK (true);
+
+
+-- ═══════════════════════════════════════════════════════════════════════
+--  MIGRACIÓN — ejecutar en una base que YA existe (Supabase → SQL Editor)
+--  Son seguras: usan IF NOT EXISTS, no borran datos.
+-- ═══════════════════════════════════════════════════════════════════════
+
+-- Opción "lleva leche" en recetas (bebidas con leche elegible al vender)
+ALTER TABLE recetas     ADD COLUMN IF NOT EXISTS requiere_leche BOOLEAN DEFAULT false;
+
+-- Columnas ya usadas por la app que no estaban en el esquema original
+ALTER TABLE movimientos ADD COLUMN IF NOT EXISTS pan_id TEXT;            -- tipo de pan elegido en sanduches
+ALTER TABLE config      ADD COLUMN IF NOT EXISTS ventas_esperadas FLOAT DEFAULT 0;
+
+-- Tabla de ítems de costos fijos (arriendo, servicios, etc.)
+CREATE TABLE IF NOT EXISTS costos_fijos_items (
+  id        TEXT PRIMARY KEY,
+  nombre    TEXT NOT NULL,
+  monto     FLOAT DEFAULT 0,
+  categoria TEXT DEFAULT 'Todas',
+  activo    BOOLEAN DEFAULT true
+);
+ALTER TABLE costos_fijos_items ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  CREATE POLICY "allow_all_costos_fijos_items" ON costos_fijos_items FOR ALL USING (true) WITH CHECK (true);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
