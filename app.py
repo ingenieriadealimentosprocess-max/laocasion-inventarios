@@ -360,9 +360,19 @@ bajas      = data["bajas"];     cfg        = data["config"]
 cf_items   = data["cf_items"]
 umbral_precio    = float(cfg.get("umbral_precio",3))
 ventas_esperadas = float(cfg.get("ventas_esperadas",0))
-# Costos fijos: calculados desde ítems si hay ventas esperadas, si no usa el % guardado
-_cf_total = sum(float(i.get("monto",0)) for i in cf_items if i.get("activo",True))
-costos_fijos = round((_cf_total/ventas_esperadas)*100,2) if ventas_esperadas>0 and cf_items else float(cfg.get("costos_fijos",15))
+_cf_default = float(cfg.get("costos_fijos",15))
+
+def cf_cat(cat=""):
+    """Retorna el % de costos fijos para la categoría de receta dada.
+    Suma ítems activos que aplican a 'Todas' o exactamente a esa categoría."""
+    if not cf_items or ventas_esperadas<=0:
+        return _cf_default
+    items=[i for i in cf_items if i.get("activo",True)
+           and i.get("categoria","Todas") in ("Todas", cat)]
+    total=sum(float(i.get("monto",0)) for i in items)
+    return round((total/ventas_esperadas)*100,2)
+
+costos_fijos = cf_cat()   # % global (para referencias generales, usa "Todas")
 panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]
 
 def kpi(col,val,lbl,t=""):
@@ -745,11 +755,13 @@ elif current == "recetas":
             st.markdown("---")
             rows_cf=[]
             for r in recetas[:20]:
+                _pct=cf_cat(r.get("categoria",""))
                 ci=calc.costo_ingredientes_receta(r,insumos,subrecetas)
-                ct=calc.costo_receta(r,insumos,subrecetas,costos_fijos)
-                m=calc.margen_receta(r,insumos,subrecetas,costos_fijos)
-                rows_cf.append({"Receta":r["nombre"],"Costo ing.":fmt_cop(round(ci)),
-                    "Costos fijos":fmt_cop(round(ci*costos_fijos/100)),"Costo total":fmt_cop(round(ct)),
+                ct=calc.costo_receta(r,insumos,subrecetas,_pct)
+                m=calc.margen_receta(r,insumos,subrecetas,_pct)
+                rows_cf.append({"Receta":r["nombre"],"Categoría":r.get("categoria",""),
+                    "CF%":f"{_pct}%","Costo ing.":fmt_cop(round(ci)),
+                    "Costos fijos":fmt_cop(round(ci*_pct/100)),"Costo total":fmt_cop(round(ct)),
                     "Precio venta":fmt_cop(r.get("precio",0)),"Margen":f"{m:.1f}%" if m is not None else "—"})
             st.dataframe(pd.DataFrame(rows_cf),hide_index=True,use_container_width=True)
 
@@ -781,8 +793,8 @@ elif current == "recetas":
             if st.button("➕ Agregar ingrediente"): st.session_state.ing_rows.append({}); st.rerun()
             if ing_data:
                 ci=sum(calc.costo_ingrediente(i["ref_id"],i["cantidad"],i["merma"],insumos,subrecetas) for i in ing_data)
-                ct=ci*(1+costos_fijos/100); m=(prec_r-ct)/prec_r*100 if prec_r>0 else None
-                st.info(f"💰 Costo ingredientes: **{fmt_cop(round(ci))}** | Costo total: **{fmt_cop(round(ct))}** | Margen: **{f'{m:.1f}%' if m is not None else '—'}**")
+                _pct_new=cf_cat(cat_r); ct=ci*(1+_pct_new/100); m=(prec_r-ct)/prec_r*100 if prec_r>0 else None
+                st.info(f"💰 Costo ingredientes: **{fmt_cop(round(ci))}** | CF {_pct_new}%: **{fmt_cop(round(ci*_pct_new/100))}** | Costo total: **{fmt_cop(round(ct))}** | Margen: **{f'{m:.1f}%' if m is not None else '—'}**")
             if st.button("💾 Guardar receta",type="primary"):
                 if not n_r.strip(): st.error("El nombre es obligatorio")
                 elif not ing_data: st.error("Agrega al menos un ingrediente")
@@ -853,8 +865,9 @@ elif current == "recetas":
 
                 for rec in recetas_cat:
                     ci = calc.costo_ingredientes_receta(rec, insumos, subrecetas)
-                    ct = calc.costo_receta(rec, insumos, subrecetas, costos_fijos)
-                    m  = calc.margen_receta(rec, insumos, subrecetas, costos_fijos)
+                    _pct=cf_cat(rec.get("categoria",""))
+                    ct = calc.costo_receta(rec, insumos, subrecetas, _pct)
+                    m  = calc.margen_receta(rec, insumos, subrecetas, _pct)
                     margen_txt = f"{m:.1f}%" if m is not None else "—"
                     label = f"**{rec['nombre']}** — Precio: {fmt_cop(rec.get('precio',0))} · Costo: {fmt_cop(round(ct))} · Margen: {margen_txt}"
                     with st.expander(label, expanded=False):
@@ -1202,7 +1215,7 @@ elif current == "movimientos":
                                         st.markdown(f"  :{color}[{'✓' if pok else '⚠️'}] {pins['nombre']}: -{fmt_n(round(pneed,3))} {pins.get('unidad','')}")
                         st.markdown("---")
 
-                ct=calc.costo_receta(rec_v,insumos,subrecetas,costos_fijos)
+                ct=calc.costo_receta(rec_v,insumos,subrecetas,cf_cat(rec_v.get("categoria","")))
                 precio=(rec_v.get("precio",0) or 0)
                 st.markdown("**Insumos del plato que se descontarán:**")
                 for ing in rec_v.get("ingredientes",[]):
@@ -1888,7 +1901,7 @@ elif current == "produccion":
                     promedio_diario=total_vendido/dias_periodo
                     sugerido=round(promedio_diario*dias_semana*(factor/100))
                     sug_porciones[rid]=sugerido
-                    ct=calc.costo_receta(rec,insumos,subrecetas,costos_fijos)
+                    ct=calc.costo_receta(rec,insumos,subrecetas,cf_cat(rec.get("categoria","")))
                     precio=rec.get("precio",0) or 0
                     rows_sug.append({
                         "Receta":rec["nombre"],"Categoría":rec.get("categoria",""),
@@ -2311,37 +2324,49 @@ elif current == "config":
         st.caption("Registra cada costo fijo mensual (arriendo, servicios, salarios, etc.). "
                    "El sistema calcula automáticamente el % a aplicar en recetas.")
 
+        _cats_cf=["Todas"]+CAT_RECETA
+
         # ── Agregar nuevo ítem ──
         with st.expander("➕ Agregar costo fijo",expanded=not cf_items):
             with st.form("form_add_cf"):
-                fa1,fa2,fa3=st.columns([3,2,1])
+                fa1,fa2=st.columns([3,2])
                 cf_nom=fa1.text_input("Nombre del costo *",placeholder="Ej: Arriendo, Servicios, Salarios")
                 cf_monto=fa2.number_input("Monto mensual (COP) *",min_value=0,step=10000,value=0)
-                cf_activo=fa3.selectbox("Estado",["Activo","Inactivo"])
+                fb1,fb2=st.columns([2,1])
+                cf_cat_sel=fb1.selectbox("Aplica a categoría",_cats_cf,
+                    help='"Todas" aplica a todas las recetas. Selecciona una categoría específica si este costo solo aplica a esa línea (ej: Bebida).')
+                cf_activo=fb2.selectbox("Estado",["Activo","Inactivo"])
                 if st.form_submit_button("💾 Agregar",use_container_width=True):
                     if not cf_nom.strip(): st.error("Escribe el nombre del costo.")
                     elif cf_monto<=0: st.error("El monto debe ser mayor a 0.")
                     else:
-                        db.add_costo_fijo({"nombre":cf_nom.strip(),"monto":cf_monto,"activo":cf_activo=="Activo"})
+                        db.add_costo_fijo({"nombre":cf_nom.strip(),"monto":cf_monto,
+                                           "categoria":cf_cat_sel,"activo":cf_activo=="Activo"})
                         st.success(f"✅ Costo '{cf_nom}' agregado."); reload()
 
         # ── Tabla de ítems actuales ──
         if cf_items:
             st.markdown("**Costos fijos registrados:**")
             for item in cf_items:
+                cat_lbl=item.get("categoria","Todas") or "Todas"
+                estado_icon="✅" if item.get("activo",True) else "⏸️"
                 with st.expander(
-                    f"{'✅' if item.get('activo',True) else '⏸️'} **{item['nombre']}** — {fmt_cop(item.get('monto',0))}",
+                    f"{estado_icon} **{item['nombre']}** — {fmt_cop(item.get('monto',0))} · 📂 {cat_lbl}",
                     expanded=False):
                     with st.form(f"form_cf_{item['id']}"):
-                        ec1,ec2,ec3=st.columns([3,2,1])
+                        ec1,ec2=st.columns([3,2])
                         e_nom=ec1.text_input("Nombre",value=item["nombre"],key=f"cfn_{item['id']}")
                         e_monto=ec2.number_input("Monto (COP)",min_value=0,step=10000,
                                                   value=int(item.get("monto",0)),key=f"cfm_{item['id']}")
-                        e_act=ec3.selectbox("Estado",["Activo","Inactivo"],
+                        ed1,ed2=st.columns([2,1])
+                        _idx_cat=_cats_cf.index(cat_lbl) if cat_lbl in _cats_cf else 0
+                        e_cat=ed1.selectbox("Aplica a categoría",_cats_cf,index=_idx_cat,key=f"cfc_{item['id']}")
+                        e_act=ed2.selectbox("Estado",["Activo","Inactivo"],
                                              index=0 if item.get("activo",True) else 1,key=f"cfa_{item['id']}")
                         sb1,sb2=st.columns(2)
                         if sb1.form_submit_button("💾 Guardar cambios",use_container_width=True):
-                            db.update_costo_fijo(item["id"],{"nombre":e_nom.strip(),"monto":e_monto,"activo":e_act=="Activo"})
+                            db.update_costo_fijo(item["id"],{"nombre":e_nom.strip(),"monto":e_monto,
+                                                              "categoria":e_cat,"activo":e_act=="Activo"})
                             st.success("✅ Actualizado"); reload()
                         if sb2.form_submit_button("🗑️ Eliminar",use_container_width=True):
                             db.delete_costo_fijo(item["id"]); st.success("✅ Eliminado"); reload()
@@ -2360,15 +2385,24 @@ elif current == "config":
                 if st.form_submit_button("💾 Guardar ventas esperadas",use_container_width=True):
                     cf_pct=round((total_cf/ve_v)*100,2) if ve_v>0 else costos_fijos
                     db.update_config(cf_pct,umbral_precio,ve_v)
-                    st.success(f"✅ Guardado. % costos fijos calculado: **{cf_pct}%**"); reload()
+                    st.success(f"✅ Guardado. % global calculado: **{cf_pct}%**"); reload()
 
             if ventas_esperadas>0:
-                cf_calc=round((total_cf/ventas_esperadas)*100,2)
-                c_kpi1,c_kpi2,c_kpi3=st.columns(3)
+                st.markdown("---")
+                st.markdown("**% resultante por categoría** (solo ítems activos que aplican a cada línea):")
+                # Categorías que tienen al menos un ítem o "Todas"
+                cats_con_items=sorted(set(i.get("categoria","Todas") or "Todas" for i in activos))
+                filas_pct=[]
+                for cat in cats_con_items:
+                    items_cat=[i for i in activos if i.get("categoria","Todas") in ("Todas",cat)]
+                    tot_cat=sum(float(i.get("monto",0)) for i in items_cat)
+                    pct_cat=round((tot_cat/ventas_esperadas)*100,2)
+                    filas_pct.append({"Categoría":cat,"Costos que aplican":len(items_cat),
+                                      "Total mensual":fmt_cop(round(tot_cat)),"%":f"{pct_cat}%"})
+                st.dataframe(pd.DataFrame(filas_pct),hide_index=True,use_container_width=True)
+                c_kpi1,c_kpi2=st.columns(2)
                 c_kpi1.metric("Ventas esperadas/mes",fmt_cop(round(ventas_esperadas)))
-                c_kpi2.metric("Total costos fijos",fmt_cop(round(total_cf)))
-                c_kpi3.metric("% Costos fijos en recetas",f"{cf_calc}%",
-                               help="Este porcentaje se aplica sobre el costo de ingredientes en todas las recetas.")
+                c_kpi2.metric("Total costos fijos activos",fmt_cop(round(total_cf)))
             else:
                 st.info("Ingresa las ventas esperadas para calcular el % automáticamente.")
                 st.caption(f"% actual aplicado en recetas: **{costos_fijos}%** (configurado manualmente)")
