@@ -992,6 +992,25 @@ elif current == "subrecetas":
                     st.success(f"✅ {len(_panes_faltan)} pan(es) creado(s) con categoría «{CAT_PAN_SUB}». "
                                "Edítalos para agregar sus ingredientes."); reload()
 
+        # ── Atajo: crear los tipos de leche ──
+        LECHES_BEBIDA=["Leche entera","Leche deslactosada","Leche semidescremada / light",
+                       "Leche de almendras","Leche de avena","Leche de soya","Leche de coco"]
+        _leches_existentes={(s.get("nombre") or "").strip().lower() for s in subrecetas
+                            if s.get("categoria")==CAT_LECHE_SUB}
+        _leches_faltan=[l for l in LECHES_BEBIDA if l.lower() not in _leches_existentes]
+        if _leches_faltan:
+            with st.expander(f"🥛 Crear tipos de leche ({len(_leches_faltan)} faltan)",expanded=False):
+                st.caption("Crea los tipos de leche que el cliente puede elegir en las bebidas. "
+                           "Se crean vacíos (sin ingredientes) para que el selector funcione de inmediato; "
+                           "luego edita cada uno y agrégale su insumo (la leche correspondiente) para que descuente del inventario.")
+                st.write("• "+"  \n• ".join(_leches_faltan))
+                if st.button("🥛 Crear estos tipos de leche",use_container_width=True):
+                    for l in _leches_faltan:
+                        db.add_subreceta({"nombre":l,"categoria":CAT_LECHE_SUB,"rendimiento":1,
+                                          "unidad_rendimiento":"ml","ingredientes":[]})
+                    st.success(f"✅ {len(_leches_faltan)} tipo(s) de leche creado(s) con categoría «{CAT_LECHE_SUB}». "
+                               "Edítalos para agregar su insumo."); reload()
+
         if not insumos: st.warning("Agrega insumos primero.")
         else:
             n_s=st.text_input("Nombre de la sub-receta *")
