@@ -1052,9 +1052,11 @@ elif current == "subrecetas":
             if merma_coc_s>0:
                 st.caption(f"📉 Rendimiento real tras cocción: **{fmt_n(round(rend_ef_s,3))} {u_s}** "
                            f"(de {fmt_n(rend_s)} antes de cocinar)")
-            st.markdown("**Ingredientes**")
+            st.markdown("**Ingredientes** — puedes usar insumos 📦 y también otras sub-recetas 🧪")
             if "sub_rows" not in st.session_state: st.session_state.sub_rows=[{}]
             opts_s={f"📦 {i['nombre']} ({i.get('unidad','')})":f"ins:{i['id']}" for i in insumos}
+            for s in subrecetas:
+                opts_s[f"🧪 {s['nombre']} ({s.get('unidad_rendimiento','')})"]=f"sub:{s['id']}"
             merma_by_ins={i["id"]:float(i.get("merma",0)) for i in insumos}
             sub_data=[]
             for idx in range(len(st.session_state.sub_rows)):
@@ -1116,10 +1118,12 @@ elif current == "subrecetas":
             lista_s2 = [s for s in subrecetas
                         if not busq_s2 or busq_s2.lower() in s["nombre"].lower()]
             st.markdown(f"**{len(lista_s2)} sub-recetas** — haz clic en el nombre para ver el detalle")
-            # mapa nombre→ref_id para selector de sub-recetas
+            # mapa nombre→ref_id para selector: insumos 📦 y otras sub-recetas 🧪
             opts_sub = {}
             for _ins in insumos:
                 opts_sub[_ins["nombre"]] = f"ins:{_ins['id']}"
+            for _sub in subrecetas:
+                opts_sub[f"🧪 {_sub['nombre']}"] = f"sub:{_sub['id']}"
             opts_names_sub = list(opts_sub.keys())
 
             cats_sub = sorted({s.get("categoria","Sin categoría") for s in lista_s2})
@@ -1167,7 +1171,10 @@ elif current == "subrecetas":
                                 "Unidad":      ref.get("unidad",""),
                                 "Costo":       fmt_cop(round(ref["costo_unit"] * bruta)),
                             })
-                        st.caption("Para **eliminar** un ingrediente: marca su casilla **🗑️ Quitar** y pulsa Guardar.")
+                        st.caption("Para **eliminar** un ingrediente: marca su casilla **🗑️ Quitar** y pulsa Guardar. "
+                                   "Puedes agregar insumos 📦 u otras sub-recetas 🧪.")
+                        # Opciones excluyendo la propia sub-receta (evita auto-referencia)
+                        opts_names_self = [n for n in opts_names_sub if opts_sub.get(n) != f"sub:{sub['id']}"]
                         edited_si = st.data_editor(
                             pd.DataFrame(rows_si) if rows_si else pd.DataFrame(columns=["🗑️ Quitar","Ingrediente","Cant. neta","Merma %","Cant. bruta","Unidad","Costo"]),
                             hide_index=True,
@@ -1175,7 +1182,7 @@ elif current == "subrecetas":
                             num_rows="dynamic",
                             column_config={
                                 "🗑️ Quitar":  st.column_config.CheckboxColumn("🗑️ Quitar", default=False, width="small"),
-                                "Ingrediente": st.column_config.SelectboxColumn("Ingrediente", options=opts_names_sub, required=True, width="large"),
+                                "Ingrediente": st.column_config.SelectboxColumn("Ingrediente", options=opts_names_self, required=True, width="large"),
                                 "Cant. neta":  st.column_config.NumberColumn("Cant. neta",  step=0.001, format="%.3f", min_value=0),
                                 "Merma %":     st.column_config.NumberColumn("Merma %",     step=0.5,   format="%.1f", min_value=0, max_value=99),
                                 "Cant. bruta": st.column_config.NumberColumn("Cant. bruta", disabled=True, format="%.3f"),

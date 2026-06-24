@@ -21,7 +21,7 @@ def rend_efectivo(sub: dict) -> float:
     return rend
 
 
-def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
+def resolve_ref(ref_id: str, insumos: list, subrecetas: list, _depth: int = 0) -> dict:
     """Devuelve nombre, unidad y costo_unit de un ingrediente (insumo o sub-receta)."""
     if not ref_id:
         return {"nombre": "(desconocido)", "unidad": "—", "costo_unit": 0}
@@ -30,7 +30,7 @@ def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
         sub = next((s for s in subrecetas if s["id"] == sub_id), None)
         if not sub:
             return {"nombre": "(sub-receta eliminada)", "unidad": "—", "costo_unit": 0}
-        ct = costo_subreceta(sub, insumos, subrecetas)
+        ct = costo_subreceta(sub, insumos, subrecetas, _depth + 1)
         rend = rend_efectivo(sub)
         return {
             "nombre": "🧪 " + sub["nombre"],
@@ -50,7 +50,7 @@ def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
             None
         )
         if sub:
-            ct = costo_subreceta(sub, insumos, subrecetas)
+            ct = costo_subreceta(sub, insumos, subrecetas, _depth + 1)
             rend = rend_efectivo(sub)
             return {"nombre": "🧪 " + sub["nombre"],
                     "unidad": sub.get("unidad_rendimiento", ""),
@@ -69,13 +69,15 @@ def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
 
 
 def costo_ingrediente(ref_id: str, cant_neta: float, merma_pct: float,
-                       insumos: list, subrecetas: list) -> float:
-    ref = resolve_ref(ref_id, insumos, subrecetas)
+                       insumos: list, subrecetas: list, _depth: int = 0) -> float:
+    ref = resolve_ref(ref_id, insumos, subrecetas, _depth)
     bruta = cant_bruta(cant_neta, merma_pct)
     return ref["costo_unit"] * bruta
 
 
-def costo_subreceta(sub: dict, insumos: list, subrecetas: list) -> float:
+def costo_subreceta(sub: dict, insumos: list, subrecetas: list, _depth: int = 0) -> float:
+    if _depth > 8:   # guarda contra referencias circulares entre sub-recetas
+        return 0.0
     total = 0.0
     for ing in sub.get("ingredientes", []):
         ref_id = ing.get("ref_id") or ("ins:" + ing.get("insumo_id", ""))
@@ -83,7 +85,7 @@ def costo_subreceta(sub: dict, insumos: list, subrecetas: list) -> float:
             ref_id,
             ing.get("cantidad", ing.get("cant_neta", 0)),
             ing.get("merma", 0),
-            insumos, subrecetas
+            insumos, subrecetas, _depth + 1
         )
     return total
 
