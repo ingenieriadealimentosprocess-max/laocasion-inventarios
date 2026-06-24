@@ -398,7 +398,7 @@ def consumo_insumos(ingredientes, mult=1, _prof=0):
         elif ref.startswith("sub:"):
             sub=next((s for s in subrecetas if s["id"]==ref[4:]),None)
             if sub:
-                rend=sub.get("rendimiento",1) or 1
+                rend=calc.rend_efectivo(sub)
                 for k,v in consumo_insumos(sub.get("ingredientes",[]),cant/rend,_prof+1).items():
                     need[k]=need.get(k,0)+v
     return need
@@ -515,6 +515,7 @@ elif current == "insumos":
                 "Stock":         float(i.get("stock",0)),
                 "Mínimo":        float(i.get("minimo",0)),
                 "Costo (COP)":   float(i.get("costo",0)),
+                "Merma %":       float(i.get("merma",0)),
                 "Proveedor":     i.get("proveedor") or "",
                 "Vida útil (d)": int(i.get("vida_util",0)),
                 "Valor total":   round(i.get("stock",0)*i.get("costo",0)),
@@ -534,6 +535,7 @@ elif current == "insumos":
                     "Stock":         st.column_config.NumberColumn("Stock", step=0.01, format="%.2f"),
                     "Mínimo":        st.column_config.NumberColumn("Mínimo", step=0.01, format="%.2f"),
                     "Costo (COP)":   st.column_config.NumberColumn("Costo (COP)", step=100, format="%d"),
+                    "Merma %":       st.column_config.NumberColumn("Merma %", step=0.5, format="%.1f", min_value=0, max_value=99, help="% de pérdida del insumo (cáscara, hueso…). Sugerido al usarlo en recetas."),
                     "Proveedor":     st.column_config.TextColumn("Proveedor"),
                     "Vida útil (d)": st.column_config.NumberColumn("Vida útil (d)", step=1, format="%d"),
                     "Valor total":   st.column_config.NumberColumn("Valor total", disabled=True, format="%d"),
@@ -558,6 +560,7 @@ elif current == "insumos":
                         upd["costo"] = nuevo_costo
                         upd["historial_precios"] = hist
                     if (orig.get("proveedor") or "") != new_row["Proveedor"]:    upd["proveedor"]   = new_row["Proveedor"]
+                    if float(orig.get("merma",0))   != new_row["Merma %"]:       upd["merma"]       = new_row["Merma %"]
                     if int(orig.get("vida_util",0)) != int(new_row["Vida útil (d)"]): upd["vida_util"] = int(new_row["Vida útil (d)"])
                     if upd:
                         db.update_insumo(orig["id"], upd); cambios += 1
@@ -708,11 +711,16 @@ elif current == "insumos":
             r6,r7,r8=st.columns(3)
             costo=r6.number_input("Costo por unidad (COP)",min_value=0.0,step=100.0)
             proveedor=r7.text_input("Proveedor"); vida_util=r8.number_input("Vida útil (días)",min_value=0,step=1)
+            r9,_r=st.columns([1,2])
+            merma_ins=r9.number_input("Merma % (opcional)",min_value=0.0,max_value=99.0,step=0.5,
+                help="% que se pierde de este insumo por limpieza/preparación (cáscara, hueso, grasa…). "
+                     "Se usará como valor sugerido al agregarlo a una receta o sub-receta.")
             if st.form_submit_button("💾 Guardar insumo",use_container_width=True):
                 if not nombre.strip(): st.error("El nombre es obligatorio")
                 else:
                     db.add_insumo({"nombre":nombre.strip(),"categoria":cat,"unidad":unidad,"stock":stock,
                         "minimo":minimo,"costo":costo,"proveedor":proveedor.strip(),"vida_util":vida_util,
+                        "merma":merma_ins,
                         "ultima_entrada":hoy(),"historial_precios":[{"fecha":hoy(),"precio":costo}] if costo>0 else []})
                     st.success(f"✅ Insumo guardado: {nombre}"); reload()
 
@@ -816,11 +824,14 @@ elif current == "recetas":
             for i in insumos: opts_ing[f"📦 {i['nombre']} ({i.get('unidad','')})"]=f"ins:{i['id']}"
             for s in subrecetas: opts_ing[f"🧪 {s['nombre']} / {s.get('rendimiento',1)}{s.get('unidad_rendimiento','')}"]=f"sub:{s['id']}"
             labels_ing=list(opts_ing.keys()); ing_data=[]
+            merma_by_ins_r={i["id"]:float(i.get("merma",0)) for i in insumos}
             for idx in range(len(st.session_state.ing_rows)):
                 ic1,ic2,ic3,ic4=st.columns([4,1.5,1.5,0.5])
                 sel_i=ic1.selectbox("Ingrediente",["— Selecciona —"]+labels_ing,key=f"ri_{idx}")
                 cant=ic2.number_input("Cant. neta",min_value=0.0,step=0.01,key=f"rc_{idx}")
-                merma=ic3.number_input("Merma %",min_value=0.0,max_value=99.0,step=0.5,key=f"rm_{idx}")
+                _rid_r=opts_ing.get(sel_i,"") if sel_i!="— Selecciona —" else ""
+                _defm_r=merma_by_ins_r.get(_rid_r[4:],0.0) if _rid_r.startswith("ins:") else 0.0
+                merma=ic3.number_input("Merma %",min_value=0.0,max_value=99.0,step=0.5,value=_defm_r,key=f"rm_{idx}_{_rid_r}")
                 if ic4.button("✕",key=f"rd_{idx}"): st.session_state.ing_rows.pop(idx); st.rerun()
                 if sel_i!="— Selecciona —":
                     rid=opts_ing[sel_i]; ing_data.append({"ref_id":rid,"cantidad":cant,"merma":merma})
@@ -1030,32 +1041,42 @@ elif current == "subrecetas":
         if not insumos: st.warning("Agrega insumos primero.")
         else:
             n_s=st.text_input("Nombre de la sub-receta *")
-            sc1,sc2,sc3=st.columns(3)
+            sc1,sc2,sc3,sc4=st.columns(4)
             cat_s=sc1.selectbox("Categoría",["Base","Salsa","Aliño","Masa","Relleno","Pastelería","Panadería","Tipo de pan","Tipo de leche","Otro"])
             rend_s=sc2.number_input("Rendimiento",min_value=0.01,step=1.0)
             u_s=sc3.selectbox("Unidad rendimiento",UNIDADES)
+            merma_coc_s=sc4.number_input("Merma cocción %",min_value=0.0,max_value=99.0,step=1.0,
+                help="% que se pierde al cocinar (agua, reducción, evaporación). "
+                     "Baja el rendimiento real: lo que entra no es lo que sale.")
+            rend_ef_s=rend_s*(1-merma_coc_s/100) if 0<merma_coc_s<100 else rend_s
+            if merma_coc_s>0:
+                st.caption(f"📉 Rendimiento real tras cocción: **{fmt_n(round(rend_ef_s,3))} {u_s}** "
+                           f"(de {fmt_n(rend_s)} antes de cocinar)")
             st.markdown("**Ingredientes**")
             if "sub_rows" not in st.session_state: st.session_state.sub_rows=[{}]
             opts_s={f"📦 {i['nombre']} ({i.get('unidad','')})":f"ins:{i['id']}" for i in insumos}
+            merma_by_ins={i["id"]:float(i.get("merma",0)) for i in insumos}
             sub_data=[]
             for idx in range(len(st.session_state.sub_rows)):
                 si1,si2,si3,si4=st.columns([4,1.5,1.5,0.5])
                 sel_s=si1.selectbox("Ingrediente",["— Selecciona —"]+list(opts_s.keys()),key=f"si_{idx}")
                 cant_s=si2.number_input("Cant.",min_value=0.0,step=0.01,key=f"sc_{idx}")
-                merma_s=si3.number_input("Merma %",min_value=0.0,max_value=99.0,key=f"sm_{idx}")
+                _ref_s=opts_s.get(sel_s,"") if sel_s!="— Selecciona —" else ""
+                _defm=merma_by_ins.get(_ref_s[4:],0.0) if _ref_s.startswith("ins:") else 0.0
+                merma_s=si3.number_input("Merma %",min_value=0.0,max_value=99.0,value=_defm,key=f"sm_{idx}_{_ref_s}")
                 if si4.button("✕",key=f"sd_{idx}"): st.session_state.sub_rows.pop(idx); st.rerun()
                 if sel_s!="— Selecciona —": sub_data.append({"ref_id":opts_s[sel_s],"cantidad":cant_s,"merma":merma_s})
             if st.button("➕ Agregar ingrediente",key="sub_add"): st.session_state.sub_rows.append({}); st.rerun()
-            if sub_data and rend_s>0:
+            if sub_data and rend_ef_s>0:
                 ct_s=sum(calc.costo_ingrediente(i["ref_id"],i["cantidad"],i["merma"],insumos,subrecetas) for i in sub_data)
-                st.info(f"💰 Costo elaboración: **{fmt_cop(round(ct_s))}** | Costo/{u_s}: **{fmt_cop(round(ct_s/rend_s))}**")
+                st.info(f"💰 Costo elaboración: **{fmt_cop(round(ct_s))}** | Costo/{u_s} (real): **{fmt_cop(round(ct_s/rend_ef_s))}**")
             if st.button("💾 Guardar sub-receta",type="primary"):
                 if not n_s.strip(): st.error("El nombre es obligatorio")
                 elif rend_s<=0: st.error("Define el rendimiento")
                 elif not sub_data: st.error("Agrega al menos un ingrediente")
                 else:
                     db.add_subreceta({"nombre":n_s.strip(),"categoria":cat_s,"rendimiento":rend_s,
-                        "unidad_rendimiento":u_s,"ingredientes":sub_data})
+                        "unidad_rendimiento":u_s,"merma_coccion":merma_coc_s,"ingredientes":sub_data})
                     st.session_state.sub_rows=[{}]; st.success(f"✅ Sub-receta guardada: {n_s}"); reload()
 
     with tab_imp:
@@ -1108,12 +1129,23 @@ elif current == "subrecetas":
                 for sub in subs_cat:
                     ct_sub = calc.costo_subreceta(sub, insumos, subrecetas)
                     rend   = sub.get("rendimiento",1) or 1
-                    label  = f"**{sub['nombre']}** — Rend: {rend} {sub.get('unidad_rendimiento','')} · Costo: {fmt_cop(round(ct_sub))} · Costo/u: {fmt_cop(round(ct_sub/rend))}"
+                    rend_ef= calc.rend_efectivo(sub)
+                    uds    = sub.get("unidad_rendimiento","")
+                    label  = f"**{sub['nombre']}** — Rend: {fmt_n(round(rend_ef,2))} {uds} · Costo: {fmt_cop(round(ct_sub))} · Costo/u: {fmt_cop(round(ct_sub/rend_ef))}"
                     with st.expander(label, expanded=False):
                         km1, km2, km3 = st.columns(3)
-                        km1.metric("Rendimiento",       f"{rend} {sub.get('unidad_rendimiento','')}")
+                        km1.metric("Rendimiento real", f"{fmt_n(round(rend_ef,2))} {uds}",
+                                   delta=(f"-{fmt_n(round(rend-rend_ef,2))} por cocción" if rend_ef<rend else None),
+                                   delta_color="inverse")
                         km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
-                        km3.metric("Costo / unidad",    fmt_cop(round(ct_sub/rend)))
+                        km3.metric("Costo / unidad",    fmt_cop(round(ct_sub/rend_ef)))
+
+                        # ── merma por cocción (lo que entra ≠ lo que sale) ──
+                        merma_coc_e = st.number_input(
+                            "📉 Merma por cocción %", min_value=0.0, max_value=99.0, step=1.0,
+                            value=float(sub.get("merma_coccion",0) or 0), key=f"mc_{sub['id']}",
+                            help="% que se pierde al cocinar. Rendimiento base (antes de cocción): "
+                                 f"{fmt_n(rend)} {uds}. Se guarda al pulsar «Guardar ingredientes».")
 
                         # ── editor de ingredientes ──────────────────────────
                         st.markdown("**✏️ Ingredientes** — edita cantidades, merma, cambia o agrega ingredientes:")
@@ -1170,7 +1202,7 @@ elif current == "subrecetas":
                                     "cant_neta": _cant,
                                     "merma":     _merma,
                                 })
-                            db.update_subreceta(sub["id"], {"ingredientes": nuevos_si})
+                            db.update_subreceta(sub["id"], {"ingredientes": nuevos_si, "merma_coccion": merma_coc_e})
                             st.success("✅ Ingredientes actualizados"); reload()
                         if si_c2.button("🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
                             db.delete_subreceta(sub["id"]); st.warning("Eliminada"); reload()
@@ -1855,7 +1887,7 @@ elif current == "produccion":
                         sub_id=rid[4:]; sub=next((s for s in subrecetas if s["id"]==sub_id),None)
                         if sub:
                             cant_sub=ing.get("cantidad", ing.get("cant_neta", 0))*porciones
-                            rend=sub.get("rendimiento",1) or 1
+                            rend=calc.rend_efectivo(sub)
                             # ── sub-recetas a preparar ──
                             if sub_id not in subrecetas_nec:
                                 subrecetas_nec[sub_id]={"nombre":sub["nombre"],"rendimiento":rend,
@@ -2067,7 +2099,7 @@ elif current == "produccion":
                             sub_id=ri[4:]; sub=next((s for s in subrecetas if s["id"]==sub_id),None)
                             if sub:
                                 cant_sub=ing.get("cantidad", ing.get("cant_neta", 0))*porciones
-                                rend=sub.get("rendimiento",1) or 1
+                                rend=calc.rend_efectivo(sub)
                                 if sub_id not in sub_nec_sug:
                                     sub_nec_sug[sub_id]={"nombre":sub["nombre"],"rendimiento":rend,
                                         "unidad":sub.get("unidad_rendimiento",""),"cantidad_necesaria":0}

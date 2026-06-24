@@ -10,6 +10,17 @@ def cant_bruta(cant_neta: float, merma_pct: float) -> float:
     return cant_neta
 
 
+def rend_efectivo(sub: dict) -> float:
+    """Rendimiento REAL de una sub-receta tras la merma por cocción.
+    Si la sub-receta pierde peso/volumen al cocinarse (lo que entra no es lo
+    que sale), el rendimiento utilizable baja y el costo por unidad sube."""
+    rend = sub.get("rendimiento", 1) or 1
+    mc = sub.get("merma_coccion", 0) or 0
+    if 0 < mc < 100:
+        return rend * (1 - mc / 100)
+    return rend
+
+
 def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
     """Devuelve nombre, unidad y costo_unit de un ingrediente (insumo o sub-receta)."""
     if not ref_id:
@@ -20,7 +31,7 @@ def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
         if not sub:
             return {"nombre": "(sub-receta eliminada)", "unidad": "—", "costo_unit": 0}
         ct = costo_subreceta(sub, insumos, subrecetas)
-        rend = sub.get("rendimiento", 1) or 1
+        rend = rend_efectivo(sub)
         return {
             "nombre": "🧪 " + sub["nombre"],
             "unidad": sub.get("unidad_rendimiento", ""),
@@ -40,7 +51,7 @@ def resolve_ref(ref_id: str, insumos: list, subrecetas: list) -> dict:
         )
         if sub:
             ct = costo_subreceta(sub, insumos, subrecetas)
-            rend = sub.get("rendimiento", 1) or 1
+            rend = rend_efectivo(sub)
             return {"nombre": "🧪 " + sub["nombre"],
                     "unidad": sub.get("unidad_rendimiento", ""),
                     "costo_unit": ct / rend}

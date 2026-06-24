@@ -60,11 +60,11 @@ def add_insumo(data: dict):
     data["id"] = uid()
     data.setdefault("creado_en", hoy())
     data.setdefault("historial_precios", [])
-    get_client().table("insumos").insert(data).execute()
+    _safe_write(lambda d: get_client().table("insumos").insert(d).execute(), data)
 
 
 def update_insumo(id: str, data: dict):
-    get_client().table("insumos").update(data).eq("id", id).execute()
+    _safe_write(lambda d: get_client().table("insumos").update(d).eq("id", id).execute(), data)
 
 
 def delete_insumo(id: str):
@@ -102,11 +102,11 @@ def add_subreceta(data: dict):
     data["id"] = uid()
     data.setdefault("creado_en", hoy())
     data.setdefault("ingredientes", [])
-    get_client().table("subrecetas").insert(data).execute()
+    _safe_write(lambda d: get_client().table("subrecetas").insert(d).execute(), data)
 
 
 def update_subreceta(id: str, data: dict):
-    get_client().table("subrecetas").update(data).eq("id", id).execute()
+    _safe_write(lambda d: get_client().table("subrecetas").update(d).eq("id", id).execute(), data)
 
 
 def delete_subreceta(id: str):
