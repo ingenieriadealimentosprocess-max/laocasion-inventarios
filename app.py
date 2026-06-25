@@ -1144,12 +1144,19 @@ elif current == "subrecetas":
                         km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
                         km3.metric("Costo / unidad",    fmt_cop(round(ct_sub/rend_ef)))
 
-                        # ── merma por cocción (lo que entra ≠ lo que sale) ──
-                        merma_coc_e = st.number_input(
+                        # ── rendimiento, unidad y merma por cocción (editables) ──
+                        re1, re2, re3 = st.columns(3)
+                        rend_e = re1.number_input(
+                            "📐 Rendimiento (antes de cocción)", min_value=0.01, step=1.0,
+                            value=float(rend), key=f"rend_{sub['id']}",
+                            help="Cantidad que produce una tanda de esta sub-receta.")
+                        _uidx = UNIDADES.index(uds) if uds in UNIDADES else 0
+                        u_e = re2.selectbox("Unidad rendimiento", UNIDADES, index=_uidx, key=f"uds_{sub['id']}")
+                        merma_coc_e = re3.number_input(
                             "📉 Merma por cocción %", min_value=0.0, max_value=99.0, step=1.0,
                             value=float(sub.get("merma_coccion",0) or 0), key=f"mc_{sub['id']}",
-                            help="% que se pierde al cocinar. Rendimiento base (antes de cocción): "
-                                 f"{fmt_n(rend)} {uds}. Se guarda al pulsar «Guardar ingredientes».")
+                            help="% que se pierde al cocinar (agua, reducción). Baja el rendimiento real.")
+                        st.caption("Los cambios de rendimiento, unidad y merma se guardan al pulsar «💾 Guardar ingredientes».")
 
                         # ── editor de ingredientes ──────────────────────────
                         st.markdown("**✏️ Ingredientes** — edita cantidades, merma, cambia o agrega ingredientes:")
@@ -1209,8 +1216,9 @@ elif current == "subrecetas":
                                     "cant_neta": _cant,
                                     "merma":     _merma,
                                 })
-                            db.update_subreceta(sub["id"], {"ingredientes": nuevos_si, "merma_coccion": merma_coc_e})
-                            st.success("✅ Ingredientes actualizados"); reload()
+                            db.update_subreceta(sub["id"], {"ingredientes": nuevos_si, "merma_coccion": merma_coc_e,
+                                "rendimiento": rend_e, "unidad_rendimiento": u_e})
+                            st.success("✅ Sub-receta actualizada"); reload()
                         if si_c2.button("🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
                             db.delete_subreceta(sub["id"]); st.warning("Eliminada"); reload()
 
