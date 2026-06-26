@@ -403,6 +403,71 @@ def consumo_insumos(ingredientes, mult=1, _prof=0):
                     need[k]=need.get(k,0)+v
     return need
 
+def _csv_bytes(df):
+    """CSV en UTF-8 con BOM para que Excel respete los acentos sin preguntar codificación."""
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+def df_export_subrecetas(subs):
+    """Tabla legible: una fila por ingrediente, con encabezado de la sub-receta repetido."""
+    rows=[]
+    for s in subs:
+        ct=calc.costo_subreceta(s,insumos,subrecetas)
+        rend=s.get("rendimiento",1) or 1
+        rend_ef=calc.rend_efectivo(s)
+        base={"Sub-receta":s["nombre"],"Categoría":s.get("categoria",""),
+              "Rendimiento":fmt_n(rend),"Unidad rend.":s.get("unidad_rendimiento",""),
+              "Merma cocción %":s.get("merma_coccion",0) or 0,
+              "Rend. real":fmt_n(round(rend_ef,2)),"Costo total":round(ct),
+              "Costo/unidad":round(ct/rend_ef) if rend_ef else 0}
+        ings=s.get("ingredientes",[])
+        if not ings:
+            rows.append({**base,"Ingrediente":"(sin ingredientes)","Tipo":"","Cantidad":"",
+                         "Unidad ing.":"","Merma %":"","Cant. bruta":"","Costo ingrediente":""})
+            continue
+        for ing in ings:
+            rid=ing.get("ref_id","")
+            ref=calc.resolve_ref(rid,insumos,subrecetas)
+            cant=ing.get("cantidad",ing.get("cant_neta",0)); merma=ing.get("merma",0)
+            bruta=calc.cant_bruta(cant,merma)
+            rows.append({**base,
+                "Ingrediente":ref["nombre"],
+                "Tipo":"Sub-receta" if rid.startswith("sub:") else "Insumo",
+                "Cantidad":fmt_n(cant),"Unidad ing.":ref.get("unidad",""),
+                "Merma %":merma,"Cant. bruta":fmt_n(round(bruta,3)),
+                "Costo ingrediente":round(ref["costo_unit"]*bruta)})
+    return pd.DataFrame(rows)
+
+def df_export_recetas(recs):
+    """Tabla legible: una fila por ingrediente, con encabezado de la receta repetido."""
+    rows=[]
+    for r in recs:
+        _pct=cf_cat(r.get("categoria",""))
+        ci=calc.costo_ingredientes_receta(r,insumos,subrecetas)
+        ct=calc.costo_receta(r,insumos,subrecetas,_pct)
+        m=calc.margen_receta(r,insumos,subrecetas,_pct)
+        precio=r.get("precio",0) or 0
+        base={"Receta":r["nombre"],"Categoría":r.get("categoria",""),
+              "Porciones":r.get("porciones",1),"Precio venta":round(precio),
+              "Costo ingredientes":round(ci),"Costos fijos %":_pct,"Costo total":round(ct),
+              "Margen %":round(m,1) if m is not None else ""}
+        ings=r.get("ingredientes",[])
+        if not ings:
+            rows.append({**base,"Ingrediente":"(sin ingredientes)","Tipo":"","Cantidad":"",
+                         "Unidad ing.":"","Merma %":"","Cant. bruta":"","Costo ingrediente":""})
+            continue
+        for ing in ings:
+            rid=ing.get("ref_id","")
+            ref=calc.resolve_ref(rid,insumos,subrecetas)
+            cant=ing.get("cantidad",ing.get("cant_neta",0)); merma=ing.get("merma",0)
+            bruta=calc.cant_bruta(cant,merma)
+            rows.append({**base,
+                "Ingrediente":ref["nombre"],
+                "Tipo":"Sub-receta" if rid.startswith("sub:") else "Insumo",
+                "Cantidad":fmt_n(cant),"Unidad ing.":ref.get("unidad",""),
+                "Merma %":merma,"Cant. bruta":fmt_n(round(bruta,3)),
+                "Costo ingrediente":round(ref["costo_unit"]*bruta)})
+    return pd.DataFrame(rows)
+
 def kpi(col,val,lbl,t=""):
     col.markdown(f'<div class="kpi-box {t}"><div class="kpi-val">{val}</div><div class="kpi-lbl">{lbl}</div></div>',
                  unsafe_allow_html=True)
@@ -758,13 +823,13 @@ elif current == "insumos":
     with tab_exp:
         if not insumos: st.info("No hay insumos para exportar.")
         else:
-            df_exp=pd.DataFrame([{"nombre":i["nombre"],"categoria":i.get("categoria",""),"unidad":i.get("unidad",""),
-                "stock":i.get("stock",0),"minimo":i.get("minimo",0),"costo":i.get("costo",0),
-                "proveedor":i.get("proveedor",""),"vida_util":i.get("vida_util",0),
-                "valor_total":round(i.get("stock",0)*i.get("costo",0))} for i in insumos])
+            df_exp=pd.DataFrame([{"Nombre":i["nombre"],"Categoría":i.get("categoria",""),"Unidad":i.get("unidad",""),
+                "Stock":i.get("stock",0),"Mínimo":i.get("minimo",0),"Costo (COP)":i.get("costo",0),
+                "Merma %":i.get("merma",0),"Proveedor":i.get("proveedor",""),"Vida útil (días)":i.get("vida_util",0),
+                "Valor total":round(i.get("stock",0)*i.get("costo",0))} for i in insumos])
             st.dataframe(df_exp,hide_index=True,use_container_width=True)
             st.download_button(f"⬇️ Exportar inventario ({len(insumos)} insumos)",
-                df_exp.to_csv(index=False).encode("utf-8"),f"inventario_{hoy()}.csv","text/csv",use_container_width=True)
+                _csv_bytes(df_exp),f"inventario_{hoy()}.csv","text/csv",use_container_width=True,type="primary")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -874,17 +939,24 @@ elif current == "recetas":
             except Exception as e: st.error(f"Error al leer el archivo: {e}")
 
     with tab_exp:
-        st.subheader("Exportar recetas a JSON")
+        st.subheader("📤 Exportar recetas")
         if not recetas: st.info("Sin recetas para exportar.")
         else:
             fcat_e=st.selectbox("Filtrar categoría",["Todas"]+CAT_RECETA,key="rcat_exp")
             lista_exp=[r for r in recetas if fcat_e=="Todas" or r.get("categoria")==fcat_e]
-            st.markdown(f"**{len(lista_exp)} recetas**")
-            export_data=[{"nombre":r["nombre"],"categoria":r.get("categoria"),"porciones":r.get("porciones",1),
-                "precio":r.get("precio",0),"ingredientes":r.get("ingredientes",[])} for r in lista_exp]
-            st.download_button(f"⬇️ Exportar {len(lista_exp)} recetas (JSON)",
-                json.dumps(export_data,ensure_ascii=False,indent=2).encode("utf-8"),
-                f"recetas_{hoy()}.json","application/json",use_container_width=True)
+            df_re=df_export_recetas(lista_exp)
+            st.caption(f"**{len(lista_exp)} recetas** · vista previa (una fila por ingrediente):")
+            st.dataframe(df_re,hide_index=True,use_container_width=True)
+            st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_exp)} recetas)",
+                _csv_bytes(df_re),f"recetas_{hoy()}.csv","text/csv",
+                use_container_width=True,type="primary")
+            with st.expander("🔧 Exportar en JSON (para re-importar o respaldo técnico)"):
+                export_data=[{"nombre":r["nombre"],"categoria":r.get("categoria"),"porciones":r.get("porciones",1),
+                    "precio":r.get("precio",0),"requiere_leche":r.get("requiere_leche",False),
+                    "ingredientes":r.get("ingredientes",[])} for r in lista_exp]
+                st.download_button(f"⬇️ Descargar JSON",
+                    json.dumps(export_data,ensure_ascii=False,indent=2).encode("utf-8"),
+                    f"recetas_{hoy()}.json","application/json",use_container_width=True)
 
     with tab_list:
         fl1, fl2 = st.columns([3,2])
@@ -1103,13 +1175,24 @@ elif current == "subrecetas":
             except Exception as e: st.error(f"Error: {e}")
 
     with tab_exp:
+        st.subheader("📤 Exportar sub-recetas")
         if not subrecetas: st.info("Sin sub-recetas para exportar.")
         else:
-            export_s=[{"nombre":s["nombre"],"categoria":s.get("categoria"),"rendimiento":s.get("rendimiento"),
-                "unidad_rendimiento":s.get("unidad_rendimiento"),"ingredientes":s.get("ingredientes",[])} for s in subrecetas]
-            st.download_button(f"⬇️ Exportar {len(subrecetas)} sub-recetas (JSON)",
-                json.dumps(export_s,ensure_ascii=False,indent=2).encode("utf-8"),
-                f"subrecetas_{hoy()}.json","application/json",use_container_width=True)
+            cat_se=st.selectbox("Filtrar categoría",["Todas"]+sorted({s.get("categoria","") for s in subrecetas}),key="scat_exp")
+            lista_se=[s for s in subrecetas if cat_se=="Todas" or s.get("categoria")==cat_se]
+            df_se=df_export_subrecetas(lista_se)
+            st.caption(f"**{len(lista_se)} sub-recetas** · vista previa (una fila por ingrediente):")
+            st.dataframe(df_se,hide_index=True,use_container_width=True)
+            st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_se)} sub-recetas)",
+                _csv_bytes(df_se),f"subrecetas_{hoy()}.csv","text/csv",
+                use_container_width=True,type="primary")
+            with st.expander("🔧 Exportar en JSON (para re-importar o respaldo técnico)"):
+                export_s=[{"nombre":s["nombre"],"categoria":s.get("categoria"),"rendimiento":s.get("rendimiento"),
+                    "unidad_rendimiento":s.get("unidad_rendimiento"),"merma_coccion":s.get("merma_coccion",0),
+                    "ingredientes":s.get("ingredientes",[])} for s in lista_se]
+                st.download_button(f"⬇️ Descargar JSON",
+                    json.dumps(export_s,ensure_ascii=False,indent=2).encode("utf-8"),
+                    f"subrecetas_{hoy()}.json","application/json",use_container_width=True)
 
     with tab_list:
         if not subrecetas: st.info("Sin sub-recetas aún.")
