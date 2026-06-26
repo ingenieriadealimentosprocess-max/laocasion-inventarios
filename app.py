@@ -469,6 +469,48 @@ def df_export_recetas(recs):
                 "Costo ingrediente":round(ref["costo_unit"]*bruta)})
     return pd.DataFrame(rows)
 
+def _lista_ing(ings):
+    """Texto legible de los ingredientes: 'Azúcar (50 g) · Agua (100 ml)'."""
+    partes=[]
+    for ing in ings or []:
+        ref=calc.resolve_ref(ing.get("ref_id",""),insumos,subrecetas)
+        cant=ing.get("cantidad",ing.get("cant_neta",0))
+        partes.append(f"{ref['nombre']} ({('%g'%float(cant))} {ref.get('unidad','')})")
+    return " · ".join(partes) if partes else "(sin ingredientes)"
+
+def df_resumen_subrecetas(subs):
+    """Una fila por sub-receta (vista ejecutiva, sin repetir)."""
+    rows=[]
+    for s in subs:
+        ct=calc.costo_subreceta(s,insumos,subrecetas)
+        rend=s.get("rendimiento",1) or 1
+        rend_ef=calc.rend_efectivo(s)
+        ings=s.get("ingredientes",[])
+        rows.append({"Sub-receta":s["nombre"],"Categoría":s.get("categoria",""),
+            "Rendimiento":round(float(rend),3),"Unidad":s.get("unidad_rendimiento",""),
+            "Merma cocción %":round(float(s.get("merma_coccion",0) or 0),2),
+            "Rend. real":round(float(rend_ef),3),"Costo total":round(ct),
+            "Costo/unidad":round(ct/rend_ef) if rend_ef else 0,
+            "N° ingredientes":len(ings),"Ingredientes":_lista_ing(ings)})
+    return pd.DataFrame(rows)
+
+def df_resumen_recetas(recs):
+    """Una fila por receta (vista ejecutiva, sin repetir)."""
+    rows=[]
+    for r in recs:
+        _pct=cf_cat(r.get("categoria",""))
+        ci=calc.costo_ingredientes_receta(r,insumos,subrecetas)
+        ct=calc.costo_receta(r,insumos,subrecetas,_pct)
+        m=calc.margen_receta(r,insumos,subrecetas,_pct)
+        precio=r.get("precio",0) or 0
+        ings=r.get("ingredientes",[])
+        rows.append({"Receta":r["nombre"],"Categoría":r.get("categoria",""),
+            "Porciones":r.get("porciones",1),"Precio venta":round(precio),
+            "Costo ingredientes":round(ci),"Costos fijos %":round(float(_pct),2),
+            "Costo total":round(ct),"Margen %":round(float(m),1) if m is not None else None,
+            "N° ingredientes":len(ings),"Ingredientes":_lista_ing(ings)})
+    return pd.DataFrame(rows)
+
 def kpi(col,val,lbl,t=""):
     col.markdown(f'<div class="kpi-box {t}"><div class="kpi-val">{val}</div><div class="kpi-lbl">{lbl}</div></div>',
                  unsafe_allow_html=True)
@@ -944,10 +986,13 @@ elif current == "recetas":
         if not recetas: st.info("Sin recetas para exportar.")
         else:
           try:
-            fcat_e=st.selectbox("Filtrar categoría",["Todas"]+CAT_RECETA,key="rcat_exp")
+            rc1,rc2=st.columns(2)
+            fcat_e=rc1.selectbox("Filtrar categoría",["Todas"]+CAT_RECETA,key="rcat_exp")
+            fmt_re=rc2.radio("Formato",["📋 Resumen (1 fila por receta)","🔬 Detallado (1 fila por ingrediente)"],key="fmt_rec_exp")
             lista_exp=[r for r in recetas if fcat_e=="Todas" or r.get("categoria")==fcat_e]
-            df_re=df_export_recetas(lista_exp)
-            st.caption(f"**{len(lista_exp)} recetas** · vista previa (una fila por ingrediente):")
+            df_re=df_resumen_recetas(lista_exp) if "Resumen" in fmt_re else df_export_recetas(lista_exp)
+            _fdesc=("una fila por receta" if "Resumen" in fmt_re else "una fila por ingrediente")
+            st.caption(f"**{len(lista_exp)} recetas** · vista previa ({_fdesc}) · el archivo incluye TODO aunque la tabla se desplace:")
             st.dataframe(df_re,hide_index=True,use_container_width=True)
             if st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_exp)} recetas)",
                 _csv_bytes(df_re),f"recetas_{hoy()}.csv","text/csv",
@@ -1185,11 +1230,14 @@ elif current == "subrecetas":
         if not subrecetas: st.info("Sin sub-recetas para exportar.")
         else:
           try:
+            ec1,ec2=st.columns(2)
             cats_disp=["Todas"]+sorted({(s.get("categoria") or "Sin categoría") for s in subrecetas})
-            cat_se=st.selectbox("Filtrar categoría",cats_disp,key="scat_exp")
+            cat_se=ec1.selectbox("Filtrar categoría",cats_disp,key="scat_exp")
+            fmt_se=ec2.radio("Formato",["📋 Resumen (1 fila por sub-receta)","🔬 Detallado (1 fila por ingrediente)"],key="fmt_sub_exp")
             lista_se=[s for s in subrecetas if cat_se=="Todas" or (s.get("categoria") or "Sin categoría")==cat_se]
-            df_se=df_export_subrecetas(lista_se)
-            st.caption(f"**{len(lista_se)} sub-recetas** · vista previa (una fila por ingrediente):")
+            df_se=df_resumen_subrecetas(lista_se) if "Resumen" in fmt_se else df_export_subrecetas(lista_se)
+            _fdesc="una fila por sub-receta" if "Resumen" in fmt_se else "una fila por ingrediente"
+            st.caption(f"**{len(lista_se)} sub-recetas** · vista previa ({_fdesc}) · el archivo incluye TODO aunque la tabla se desplace:")
             st.dataframe(df_se,hide_index=True,use_container_width=True)
             if st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_se)} sub-recetas)",
                 _csv_bytes(df_se),f"subrecetas_{hoy()}.csv","text/csv",
