@@ -942,6 +942,7 @@ elif current == "recetas":
         st.subheader("📤 Exportar recetas")
         if not recetas: st.info("Sin recetas para exportar.")
         else:
+          try:
             fcat_e=st.selectbox("Filtrar categoría",["Todas"]+CAT_RECETA,key="rcat_exp")
             lista_exp=[r for r in recetas if fcat_e=="Todas" or r.get("categoria")==fcat_e]
             df_re=df_export_recetas(lista_exp)
@@ -949,7 +950,7 @@ elif current == "recetas":
             st.dataframe(df_re,hide_index=True,use_container_width=True)
             st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_exp)} recetas)",
                 _csv_bytes(df_re),f"recetas_{hoy()}.csv","text/csv",
-                use_container_width=True,type="primary")
+                use_container_width=True)
             with st.expander("🔧 Exportar en JSON (para re-importar o respaldo técnico)"):
                 export_data=[{"nombre":r["nombre"],"categoria":r.get("categoria"),"porciones":r.get("porciones",1),
                     "precio":r.get("precio",0),"requiere_leche":r.get("requiere_leche",False),
@@ -957,6 +958,8 @@ elif current == "recetas":
                 st.download_button(f"⬇️ Descargar JSON",
                     json.dumps(export_data,ensure_ascii=False,indent=2).encode("utf-8"),
                     f"recetas_{hoy()}.json","application/json",use_container_width=True)
+          except Exception as e:
+            st.error(f"❌ Error al generar la exportación: {type(e).__name__}: {e}")
 
     with tab_list:
         fl1, fl2 = st.columns([3,2])
@@ -1178,14 +1181,16 @@ elif current == "subrecetas":
         st.subheader("📤 Exportar sub-recetas")
         if not subrecetas: st.info("Sin sub-recetas para exportar.")
         else:
-            cat_se=st.selectbox("Filtrar categoría",["Todas"]+sorted({s.get("categoria","") for s in subrecetas}),key="scat_exp")
-            lista_se=[s for s in subrecetas if cat_se=="Todas" or s.get("categoria")==cat_se]
+          try:
+            cats_disp=["Todas"]+sorted({(s.get("categoria") or "Sin categoría") for s in subrecetas})
+            cat_se=st.selectbox("Filtrar categoría",cats_disp,key="scat_exp")
+            lista_se=[s for s in subrecetas if cat_se=="Todas" or (s.get("categoria") or "Sin categoría")==cat_se]
             df_se=df_export_subrecetas(lista_se)
             st.caption(f"**{len(lista_se)} sub-recetas** · vista previa (una fila por ingrediente):")
             st.dataframe(df_se,hide_index=True,use_container_width=True)
             st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_se)} sub-recetas)",
                 _csv_bytes(df_se),f"subrecetas_{hoy()}.csv","text/csv",
-                use_container_width=True,type="primary")
+                use_container_width=True)
             with st.expander("🔧 Exportar en JSON (para re-importar o respaldo técnico)"):
                 export_s=[{"nombre":s["nombre"],"categoria":s.get("categoria"),"rendimiento":s.get("rendimiento"),
                     "unidad_rendimiento":s.get("unidad_rendimiento"),"merma_coccion":s.get("merma_coccion",0),
@@ -1193,6 +1198,8 @@ elif current == "subrecetas":
                 st.download_button(f"⬇️ Descargar JSON",
                     json.dumps(export_s,ensure_ascii=False,indent=2).encode("utf-8"),
                     f"subrecetas_{hoy()}.json","application/json",use_container_width=True)
+          except Exception as e:
+            st.error(f"❌ Error al generar la exportación: {type(e).__name__}: {e}")
 
     with tab_list:
         if not subrecetas: st.info("Sin sub-recetas aún.")
