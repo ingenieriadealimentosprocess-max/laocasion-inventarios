@@ -948,9 +948,11 @@ elif current == "recetas":
             df_re=df_export_recetas(lista_exp)
             st.caption(f"**{len(lista_exp)} recetas** · vista previa (una fila por ingrediente):")
             st.dataframe(df_re,hide_index=True,use_container_width=True)
-            st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_exp)} recetas)",
+            if st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_exp)} recetas)",
                 _csv_bytes(df_re),f"recetas_{hoy()}.csv","text/csv",
-                use_container_width=True)
+                use_container_width=True):
+                st.success(f"✅ Archivo descargado. Búscalo en tu carpeta de **Descargas** como `recetas_{hoy()}.csv`")
+            st.caption("ℹ️ El archivo se guarda directo en tu carpeta de **Descargas** (no aparece ninguna ventana).")
             with st.expander("🔧 Exportar en JSON (para re-importar o respaldo técnico)"):
                 export_data=[{"nombre":r["nombre"],"categoria":r.get("categoria"),"porciones":r.get("porciones",1),
                     "precio":r.get("precio",0),"requiere_leche":r.get("requiere_leche",False),
@@ -1188,9 +1190,11 @@ elif current == "subrecetas":
             df_se=df_export_subrecetas(lista_se)
             st.caption(f"**{len(lista_se)} sub-recetas** · vista previa (una fila por ingrediente):")
             st.dataframe(df_se,hide_index=True,use_container_width=True)
-            st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_se)} sub-recetas)",
+            if st.download_button(f"⬇️ Exportar a Excel/CSV ({len(lista_se)} sub-recetas)",
                 _csv_bytes(df_se),f"subrecetas_{hoy()}.csv","text/csv",
-                use_container_width=True)
+                use_container_width=True):
+                st.success(f"✅ Archivo descargado. Búscalo en tu carpeta de **Descargas** como `subrecetas_{hoy()}.csv`")
+            st.caption("ℹ️ El archivo se guarda directo en tu carpeta de **Descargas** (no aparece ninguna ventana).")
             with st.expander("🔧 Exportar en JSON (para re-importar o respaldo técnico)"):
                 export_s=[{"nombre":s["nombre"],"categoria":s.get("categoria"),"rendimiento":s.get("rendimiento"),
                     "unidad_rendimiento":s.get("unidad_rendimiento"),"merma_coccion":s.get("merma_coccion",0),
