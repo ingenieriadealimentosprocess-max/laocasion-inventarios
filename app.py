@@ -404,8 +404,9 @@ def consumo_insumos(ingredientes, mult=1, _prof=0):
     return need
 
 def _csv_bytes(df):
-    """CSV en UTF-8 con BOM para que Excel respete los acentos sin preguntar codificación."""
-    return df.to_csv(index=False).encode("utf-8-sig")
+    """CSV para Excel en español (Colombia): separador ';', decimales con coma
+    y UTF-8 con BOM. Así Excel lo abre separado en columnas y con acentos OK."""
+    return df.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig")
 
 def df_export_subrecetas(subs):
     """Tabla legible: una fila por ingrediente, con encabezado de la sub-receta repetido."""
@@ -415,14 +416,14 @@ def df_export_subrecetas(subs):
         rend=s.get("rendimiento",1) or 1
         rend_ef=calc.rend_efectivo(s)
         base={"Sub-receta":s["nombre"],"Categoría":s.get("categoria",""),
-              "Rendimiento":fmt_n(rend),"Unidad rend.":s.get("unidad_rendimiento",""),
-              "Merma cocción %":s.get("merma_coccion",0) or 0,
-              "Rend. real":fmt_n(round(rend_ef,2)),"Costo total":round(ct),
+              "Rendimiento":round(float(rend),3),"Unidad rend.":s.get("unidad_rendimiento",""),
+              "Merma cocción %":round(float(s.get("merma_coccion",0) or 0),2),
+              "Rend. real":round(float(rend_ef),3),"Costo total":round(ct),
               "Costo/unidad":round(ct/rend_ef) if rend_ef else 0}
         ings=s.get("ingredientes",[])
         if not ings:
-            rows.append({**base,"Ingrediente":"(sin ingredientes)","Tipo":"","Cantidad":"",
-                         "Unidad ing.":"","Merma %":"","Cant. bruta":"","Costo ingrediente":""})
+            rows.append({**base,"Ingrediente":"(sin ingredientes)","Tipo":"","Cantidad":None,
+                         "Unidad ing.":"","Merma %":None,"Cant. bruta":None,"Costo ingrediente":None})
             continue
         for ing in ings:
             rid=ing.get("ref_id","")
@@ -432,8 +433,8 @@ def df_export_subrecetas(subs):
             rows.append({**base,
                 "Ingrediente":ref["nombre"],
                 "Tipo":"Sub-receta" if rid.startswith("sub:") else "Insumo",
-                "Cantidad":fmt_n(cant),"Unidad ing.":ref.get("unidad",""),
-                "Merma %":merma,"Cant. bruta":fmt_n(round(bruta,3)),
+                "Cantidad":round(float(cant),3),"Unidad ing.":ref.get("unidad",""),
+                "Merma %":round(float(merma),2),"Cant. bruta":round(float(bruta),3),
                 "Costo ingrediente":round(ref["costo_unit"]*bruta)})
     return pd.DataFrame(rows)
 
@@ -448,12 +449,12 @@ def df_export_recetas(recs):
         precio=r.get("precio",0) or 0
         base={"Receta":r["nombre"],"Categoría":r.get("categoria",""),
               "Porciones":r.get("porciones",1),"Precio venta":round(precio),
-              "Costo ingredientes":round(ci),"Costos fijos %":_pct,"Costo total":round(ct),
-              "Margen %":round(m,1) if m is not None else ""}
+              "Costo ingredientes":round(ci),"Costos fijos %":round(float(_pct),2),"Costo total":round(ct),
+              "Margen %":round(float(m),1) if m is not None else None}
         ings=r.get("ingredientes",[])
         if not ings:
-            rows.append({**base,"Ingrediente":"(sin ingredientes)","Tipo":"","Cantidad":"",
-                         "Unidad ing.":"","Merma %":"","Cant. bruta":"","Costo ingrediente":""})
+            rows.append({**base,"Ingrediente":"(sin ingredientes)","Tipo":"","Cantidad":None,
+                         "Unidad ing.":"","Merma %":None,"Cant. bruta":None,"Costo ingrediente":None})
             continue
         for ing in ings:
             rid=ing.get("ref_id","")
@@ -463,8 +464,8 @@ def df_export_recetas(recs):
             rows.append({**base,
                 "Ingrediente":ref["nombre"],
                 "Tipo":"Sub-receta" if rid.startswith("sub:") else "Insumo",
-                "Cantidad":fmt_n(cant),"Unidad ing.":ref.get("unidad",""),
-                "Merma %":merma,"Cant. bruta":fmt_n(round(bruta,3)),
+                "Cantidad":round(float(cant),3),"Unidad ing.":ref.get("unidad",""),
+                "Merma %":round(float(merma),2),"Cant. bruta":round(float(bruta),3),
                 "Costo ingrediente":round(ref["costo_unit"]*bruta)})
     return pd.DataFrame(rows)
 
