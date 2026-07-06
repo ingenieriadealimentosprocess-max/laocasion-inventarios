@@ -599,8 +599,8 @@ if current == "dashboard":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "insumos":
     st.title("📦 Insumos")
-    tab_list,tab_stock0,tab_minimos,tab_add,tab_imp,tab_exp = st.tabs([
-        "📋 Listado","📊 Stock inicial","🔔 Mínimos / Alertas","➕ Agregar","📥 Importar CSV","📤 Exportar CSV"
+    tab_list,tab_stock0,tab_minimos,tab_add,tab_imp,tab_precios,tab_exp = st.tabs([
+        "📋 Listado","📊 Stock inicial","🔔 Mínimos / Alertas","➕ Agregar","📥 Importar CSV","💲 Actualizar precios (Loggro)","📤 Exportar CSV"
     ])
 
     with tab_list:
@@ -862,6 +862,96 @@ elif current == "insumos":
                         except Exception: errores+=1
                     st.success(f"✅ {creados} creados, {actualizados} actualizados, {errores} errores"); reload()
             except Exception as e: st.error(f"Error: {e}")
+
+    with tab_precios:
+        st.subheader("💲 Actualizar precios desde Loggro")
+        st.markdown("Sube el reporte de **insumos de Loggro** (Excel). El sistema empareja por "
+                    "**Código** (o por nombre si no hay código) y actualiza el **costo** con el "
+                    "*«Últ. Precio de compra (Unit.)»*, guardando el precio anterior en el historial.")
+        up_prec=st.file_uploader("Reporte de insumos de Loggro (.xlsx)",type=["xlsx","xls"],key="up_precios")
+        if up_prec:
+            try:
+                dfp=pd.read_excel(up_prec)
+                def _n(s):
+                    s=str(s).lower().strip()
+                    for a,b in [("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("ñ","n")]: s=s.replace(a,b)
+                    return s
+                cols={_n(c):c for c in dfp.columns}
+                def _find(*keys):
+                    for k in keys:
+                        for cn,orig in cols.items():
+                            if k in cn: return orig
+                    return None
+                c_cod=_find("codigo"); c_nom=_find("nombre"); c_pre=_find("precio")
+                c_cant=_find("cantidad actual"); c_uni=_find("unidad"); c_min=_find("minimo")
+                if not c_pre or (not c_cod and not c_nom):
+                    st.error("No encuentro las columnas de **Código/Nombre** y **Precio** en el archivo. "
+                             f"Columnas detectadas: {list(dfp.columns)}")
+                else:
+                    by_id={str(i["id"]).strip().lower():i for i in insumos}
+                    by_nom={_n(i["nombre"]):i for i in insumos}
+                    o1,o2,o3=st.columns(3)
+                    ign0=o1.checkbox("Ignorar precios en $0",value=True)
+                    act_stk=o2.checkbox("Actualizar también stock",value=False,
+                        help="Reemplaza el stock con la 'Cantidad actual' del archivo.") if c_cant else False
+                    crear=o3.checkbox("Crear los que no existan",value=False)
+                    prev=[]; plan=[]
+                    for _,row in dfp.iterrows():
+                        cod=str(row.get(c_cod,"") if c_cod else "").strip()
+                        nom=str(row.get(c_nom,"") if c_nom else "").strip()
+                        try: precio=float(row.get(c_pre,0) or 0)
+                        except: precio=0.0
+                        ins=by_id.get(cod.lower()) or by_nom.get(_n(nom))
+                        if ign0 and precio<=0:
+                            continue
+                        if ins:
+                            ant=float(ins.get("costo",0) or 0)
+                            prev.append({"Código":cod,"Insumo":ins["nombre"],
+                                "Precio actual":round(ant),"Precio nuevo":round(precio,2),
+                                "Cambio":round(precio-ant,2),
+                                "Acción":"✏️ Actualiza" if abs(precio-ant)>0.001 else "= Igual"})
+                            plan.append(("upd",ins,precio,row))
+                        else:
+                            prev.append({"Código":cod,"Insumo":nom or "(sin nombre)",
+                                "Precio actual":"—","Precio nuevo":round(precio,2),"Cambio":"—",
+                                "Acción":"🆕 Nuevo" if crear else "⚠️ No existe"})
+                            if crear and nom: plan.append(("new",nom,precio,row))
+                    n_upd=sum(1 for p in plan if p[0]=="upd"); n_new=sum(1 for p in plan if p[0]=="new")
+                    k1,k2,k3=st.columns(3)
+                    k1.metric("Filas en archivo",len(dfp))
+                    k2.metric("A actualizar",n_upd)
+                    k3.metric("Nuevos a crear",n_new if crear else 0)
+                    st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=340)
+                    if st.button("✅ Aplicar actualización de precios",type="primary",use_container_width=True):
+                        upd=new=err=0
+                        for item in plan:
+                            try:
+                                if item[0]=="upd":
+                                    _,ins,precio,row=item
+                                    ant=float(ins.get("costo",0) or 0)
+                                    d={"costo":round(precio,4),"ultima_entrada":hoy()}
+                                    if abs(precio-ant)>0.001:
+                                        hist=ins.get("historial_precios") or []
+                                        hist.append({"fecha":hoy(),"precio":round(precio,4),"precio_anterior":ant})
+                                        d["historial_precios"]=hist
+                                    if act_stk and c_cant:
+                                        try: d["stock"]=float(row.get(c_cant,0) or 0)
+                                        except: pass
+                                    db.update_insumo(ins["id"],d); upd+=1
+                                else:
+                                    _,nom,precio,row=item
+                                    d={"nombre":nom,"categoria":"Otros",
+                                       "unidad":str(row.get(c_uni,"unidad") if c_uni else "unidad"),
+                                       "stock":float(row.get(c_cant,0) or 0) if c_cant else 0,
+                                       "minimo":float(row.get(c_min,0) or 0) if c_min else 0,
+                                       "costo":round(precio,4),"ultima_entrada":hoy(),
+                                       "historial_precios":[{"fecha":hoy(),"precio":round(precio,4)}] if precio>0 else []}
+                                    db.add_insumo(d); new+=1
+                            except Exception: err+=1
+                        st.success(f"✅ {upd} precios actualizados"+(f", {new} creados" if new else "")+(f", {err} errores" if err else ""))
+                        reload()
+            except Exception as e:
+                st.error(f"❌ No se pudo leer el archivo: {type(e).__name__}: {e}")
 
     with tab_exp:
         if not insumos: st.info("No hay insumos para exportar.")
