@@ -887,30 +887,45 @@ elif current == "insumos":
                     return None
                 c_cod=_find("codigo"); c_nom=_find("nombre"); c_pre=_find("precio")
                 c_cant=_find("cantidad actual"); c_uni=_find("unidad"); c_min=_find("minimo")
+                c_est=_find("estado")
                 if not c_pre or (not c_cod and not c_nom):
                     st.error("No encuentro las columnas de **Código/Nombre** y **Precio** en el archivo. "
                              f"Columnas detectadas: {list(dfp.columns)}")
                 else:
                     by_id={str(i["id"]).strip().lower():i for i in insumos}
                     by_nom={_n(i["nombre"]):i for i in insumos}
-                    # Contar códigos: los DUPLICADOS en el archivo no son confiables
-                    cod_dups={}
+                    # Contar códigos y guardar nombres por código (para la alerta)
+                    cod_dups={}; cod_names={}
                     if c_cod:
                         for _,row in dfp.iterrows():
                             _c=str(row.get(c_cod,"")).strip().lower()
-                            if _c: cod_dups[_c]=cod_dups.get(_c,0)+1
+                            if _c:
+                                cod_dups[_c]=cod_dups.get(_c,0)+1
+                                cod_names.setdefault(_c,[]).append(str(row.get(c_nom,"") if c_nom else "").strip())
                     _dups=[c for c,n in cod_dups.items() if n>1]
                     if _dups:
-                        st.warning(f"⚠️ El archivo trae **{len(_dups)} código(s) repetidos** (error de Loggro). "
-                                   "Para esos, emparejo por **nombre** en vez de por código, para no cruzar datos. "
-                                   f"Códigos repetidos: {', '.join(_dups[:10])}{'…' if len(_dups)>10 else ''}")
-                    o1,o2,o3=st.columns(3)
+                        st.error(f"🚨 **Alerta: {len(_dups)} código(s) repetidos en el archivo.** "
+                                 "Varios productos comparten el mismo código (es un error de Loggro que debes revisar). "
+                                 "Para esas filas emparejo por **nombre** (no por código) para no cruzar precios.")
+                        with st.expander(f"🔎 Ver los {len(_dups)} códigos repetidos y verificar"):
+                            filas_dup=[]
+                            for c in sorted(_dups):
+                                for nm in cod_names.get(c,[]):
+                                    filas_dup.append({"Código":c.upper(),"Producto":nm})
+                            st.dataframe(pd.DataFrame(filas_dup),hide_index=True,use_container_width=True)
+                            st.caption("👉 Corrige estos códigos en Loggro para que cada producto tenga uno único.")
+                    o1,o2,o3,o4=st.columns(4)
                     ign0=o1.checkbox("Ignorar precios en $0",value=True)
-                    act_stk=o2.checkbox("Actualizar también stock",value=False,
+                    solo_act=o2.checkbox("Solo activos",value=True,
+                        help="No importa los insumos marcados como 'Inactivo' en la columna Estado.") if c_est else False
+                    act_stk=o3.checkbox("Actualizar también stock",value=False,
                         help="Reemplaza el stock con la 'Cantidad actual' del archivo.") if c_cant else False
-                    crear=o3.checkbox("Crear los que no existan",value=False)
-                    prev=[]; plan=[]
+                    crear=o4.checkbox("Crear los que no existan",value=False)
+                    prev=[]; plan=[]; n_inact=0
                     for _,row in dfp.iterrows():
+                        estado=str(row.get(c_est,"") if c_est else "").strip()
+                        if solo_act and c_est and estado.lower().startswith("inactiv"):
+                            n_inact+=1; continue
                         cod=str(row.get(c_cod,"") if c_cod else "").strip()
                         nom=str(row.get(c_nom,"") if c_nom else "").strip()
                         try: precio=float(row.get(c_pre,0) or 0)
@@ -937,10 +952,11 @@ elif current == "insumos":
                                 "Acción":"🆕 Nuevo" if crear else "⚠️ No existe"})
                             if crear and nom: plan.append(("new",nom,precio,row))
                     n_upd=sum(1 for p in plan if p[0]=="upd"); n_new=sum(1 for p in plan if p[0]=="new")
-                    k1,k2,k3=st.columns(3)
+                    k1,k2,k3,k4=st.columns(4)
                     k1.metric("Filas en archivo",len(dfp))
                     k2.metric("A actualizar",n_upd)
                     k3.metric("Nuevos a crear",n_new if crear else 0)
+                    k4.metric("Inactivos omitidos",n_inact)
                     st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=340)
                     if st.button("✅ Aplicar actualización de precios",type="primary",use_container_width=True):
                         upd=new=err=0
