@@ -642,7 +642,7 @@ elif current == "insumos":
                     "Unidad":        st.column_config.SelectboxColumn("Unidad", options=UNIDADES),
                     "Stock":         st.column_config.NumberColumn("Stock", step=0.01, format="%.2f"),
                     "Mínimo":        st.column_config.NumberColumn("Mínimo", step=0.01, format="%.2f"),
-                    "Costo (COP)":   st.column_config.NumberColumn("Costo (COP)", step=100, format="%d"),
+                    "Costo (COP)":   st.column_config.NumberColumn("Costo (COP)", step=0.01, format="%.2f"),
                     "Merma %":       st.column_config.NumberColumn("Merma %", step=0.5, format="%.1f", min_value=0, max_value=99, help="% de pérdida del insumo (cáscara, hueso…). Sugerido al usarlo en recetas."),
                     "Proveedor":     st.column_config.TextColumn("Proveedor"),
                     "Vida útil (d)": st.column_config.NumberColumn("Vida útil (d)", step=1, format="%d"),
@@ -907,7 +907,7 @@ elif current == "insumos":
                         if ins:
                             ant=float(ins.get("costo",0) or 0)
                             prev.append({"Código":cod,"Insumo":ins["nombre"],
-                                "Precio actual":round(ant),"Precio nuevo":round(precio,2),
+                                "Precio actual":round(ant,2),"Precio nuevo":round(precio,2),
                                 "Cambio":round(precio-ant,2),
                                 "Acción":"✏️ Actualiza" if abs(precio-ant)>0.001 else "= Igual"})
                             plan.append(("upd",ins,precio,row))
@@ -929,10 +929,10 @@ elif current == "insumos":
                                 if item[0]=="upd":
                                     _,ins,precio,row=item
                                     ant=float(ins.get("costo",0) or 0)
-                                    d={"costo":round(precio,4),"ultima_entrada":hoy()}
+                                    d={"costo":round(precio,2),"ultima_entrada":hoy()}
                                     if abs(precio-ant)>0.001:
                                         hist=ins.get("historial_precios") or []
-                                        hist.append({"fecha":hoy(),"precio":round(precio,4),"precio_anterior":ant})
+                                        hist.append({"fecha":hoy(),"precio":round(precio,2),"precio_anterior":ant})
                                         d["historial_precios"]=hist
                                     if act_stk and c_cant:
                                         try: d["stock"]=float(row.get(c_cant,0) or 0)
@@ -944,8 +944,8 @@ elif current == "insumos":
                                        "unidad":str(row.get(c_uni,"unidad") if c_uni else "unidad"),
                                        "stock":float(row.get(c_cant,0) or 0) if c_cant else 0,
                                        "minimo":float(row.get(c_min,0) or 0) if c_min else 0,
-                                       "costo":round(precio,4),"ultima_entrada":hoy(),
-                                       "historial_precios":[{"fecha":hoy(),"precio":round(precio,4)}] if precio>0 else []}
+                                       "costo":round(precio,2),"ultima_entrada":hoy(),
+                                       "historial_precios":[{"fecha":hoy(),"precio":round(precio,2)}] if precio>0 else []}
                                     db.add_insumo(d); new+=1
                             except Exception: err+=1
                         st.success(f"✅ {upd} precios actualizados"+(f", {new} creados" if new else "")+(f", {err} errores" if err else ""))
