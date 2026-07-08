@@ -177,6 +177,12 @@ def update_config(costos_fijos: float, umbral_precio: float, ventas_esperadas: f
     }).execute()
 
 
+def set_alerta_import(texto: str):
+    """Guarda (o limpia) la última alerta de importación (JSON) para mostrarla en Alertas."""
+    _safe_write(lambda d: get_client().table("config").upsert(d).execute(),
+                {"id": 1, "alertas_import": texto})
+
+
 # ── COSTOS FIJOS ITEMS ────────────────────────────────────────────────────────
 
 def get_costos_fijos_items():

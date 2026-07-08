@@ -984,6 +984,11 @@ elif current == "insumos":
                                        "historial_precios":[{"fecha":hoy(),"precio":round(precio,2)}] if precio>0 else []}
                                     db.add_insumo(d); new+=1
                             except Exception: err+=1
+                        # Guardar/limpiar la alerta de códigos repetidos para mostrarla en 🔔 Alertas
+                        try:
+                            rep={"fecha":hoy(),"codigos":[{"codigo":c.upper(),"productos":cod_names.get(c,[])} for c in sorted(_dups)]}
+                            db.set_alerta_import(json.dumps(rep,ensure_ascii=False))
+                        except Exception: pass
                         st.success(f"✅ {upd} precios actualizados"+(f", {new} creados" if new else "")+(f", {err} errores" if err else ""))
                         reload()
             except Exception as e:
@@ -1917,6 +1922,25 @@ elif current == "bajas":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "alertas":
     st.title("🔔 Alertas")
+
+    # ── ALERTA: códigos repetidos detectados en la última importación de Loggro ─
+    _al_raw=cfg.get("alertas_import")
+    if _al_raw:
+        try: _al=json.loads(_al_raw)
+        except Exception: _al=None
+        if _al and _al.get("codigos"):
+            st.error(f"🚨 **{len(_al['codigos'])} código(s) repetidos en Loggro** "
+                     f"(detectados en la importación del {_al.get('fecha','')}). "
+                     "Varios productos comparten el mismo código — corrígelo en Loggro para evitar cruces de precio.")
+            with st.expander("🔎 Ver productos con código repetido", expanded=True):
+                filas=[]
+                for c in _al["codigos"]:
+                    for p in c.get("productos",[]):
+                        filas.append({"Código":c["codigo"],"Producto":p})
+                st.dataframe(pd.DataFrame(filas),hide_index=True,use_container_width=True)
+                if st.button("✔️ Ya lo revisé — ocultar alerta"):
+                    db.set_alerta_import(""); reload()
+            st.markdown("---")
 
     # ── resumen KPIs ──────────────────────────────────────────────────────────
     bajo_a  = [i for i in insumos if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"]]
