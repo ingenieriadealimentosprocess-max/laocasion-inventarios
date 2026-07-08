@@ -511,6 +511,14 @@ def df_resumen_recetas(recs):
             "N° ingredientes":len(ings),"Ingredientes":_lista_ing(ings)})
     return pd.DataFrame(rows)
 
+def alerta_import_data():
+    """Devuelve el reporte de códigos repetidos guardado (o None)."""
+    raw=cfg.get("alertas_import")
+    if not raw: return None
+    try: d=json.loads(raw)
+    except Exception: return None
+    return d if d and d.get("codigos") else None
+
 def kpi(col,val,lbl,t=""):
     col.markdown(f'<div class="kpi-box {t}"><div class="kpi-val">{val}</div><div class="kpi-lbl">{lbl}</div></div>',
                  unsafe_allow_html=True)
@@ -521,6 +529,12 @@ def kpi(col,val,lbl,t=""):
 # ══════════════════════════════════════════════════════════════════════════════
 if current == "dashboard":
     st.title("📊 Dashboard")
+    _al_dash=alerta_import_data()
+    if _al_dash:
+        _dc1,_dc2=st.columns([5,1])
+        _dc1.error(f"🚨 **{len(_al_dash['codigos'])} código(s) repetidos en Loggro** "
+                   f"(importación del {_al_dash.get('fecha','')}). Revísalos para evitar cruces de precio.")
+        _dc2.button("🔔 Ver en Alertas",on_click=ir_a,args=("🔔 Alertas",),use_container_width=True)
     bajo       = [i for i in insumos if i.get("minimo",0)>0 and i.get("stock",0)<=i["minimo"]]
     lunes      = date.today()-timedelta(days=date.today().weekday())
     bajas_sem  = sum(b.get("costo_total",0) for b in bajas if (b.get("fecha") or "")>=str(lunes))
