@@ -382,9 +382,9 @@ def cf_cat(cat=""):
     if cat in CAT_SIN_CF:
         return 0.0
     return costos_fijos
-# Panes y leches pueden estar registrados como SUB-RECETAS o como RECETAS (categoría "Tipo de pan"/"Tipo de leche")
-panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]  + [r for r in recetas if r.get("categoria")==CAT_PAN_SUB]
-leches_sub    = [s for s in subrecetas if s.get("categoria")==CAT_LECHE_SUB] + [r for r in recetas if r.get("categoria")==CAT_LECHE_SUB]
+# Panes y leches pueden estar como SUB-RECETAS, RECETAS con esa categoría, o RECETAS marcadas (es_pan/es_leche)
+panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]  + [r for r in recetas if r.get("categoria")==CAT_PAN_SUB or r.get("es_pan")]
+leches_sub    = [s for s in subrecetas if s.get("categoria")==CAT_LECHE_SUB] + [r for r in recetas if r.get("categoria")==CAT_LECHE_SUB or r.get("es_leche")]
 
 def consumo_insumos(ingredientes, mult=1, _prof=0):
     """Devuelve {ins_id: cantidad_bruta} que consume una lista de ingredientes.
@@ -1206,12 +1206,19 @@ elif current == "recetas":
                         # ── datos editables de la receta (categoría, precio, porciones) ──
                         de1,de2,de3 = st.columns([2,1,1])
                         _cidx = CAT_RECETA.index(rec.get("categoria")) if rec.get("categoria") in CAT_RECETA else 0
-                        cat_e   = de1.selectbox("Categoría", CAT_RECETA, index=_cidx, key=f"cat_{rec['id']}",
-                                    help="Para que un pan aparezca en el selector de sanduches, ponle categoría «Tipo de pan».")
+                        cat_e   = de1.selectbox("Categoría", CAT_RECETA, index=_cidx, key=f"cat_{rec['id']}")
                         precio_e= de2.number_input("Precio venta", min_value=0.0, step=500.0,
                                     value=float(rec.get("precio",0) or 0), key=f"precio_{rec['id']}")
                         porc_e  = de3.number_input("Porciones", min_value=1, step=1,
                                     value=int(rec.get("porciones",1) or 1), key=f"porc_{rec['id']}")
+
+                        # ── marcar esta receta como opción de pan (sin cambiar su categoría) ──
+                        es_pan_e = st.checkbox(
+                            "🍞 Es un tipo de pan (aparece para elegir en los sanduches)",
+                            value=bool(rec.get("es_pan")),
+                            key=f"espan_{rec['id']}",
+                            help="Marca esta receta (Croissant, Bagel, Baguette…) como opción de pan. "
+                                 "Sigue vendiéndose sola y conserva su categoría; solo se suma al selector de pan de los sanduches.")
 
                         # ── opción: lleva leche (cliente elige tipo al vender) ──
                         req_leche_e = st.checkbox(
@@ -1276,7 +1283,7 @@ elif current == "recetas":
                                     "merma":     _merma,
                                 })
                             db.update_receta(rec["id"], {"ingredientes": nuevos_ing, "requiere_leche": req_leche_e,
-                                "categoria": cat_e, "precio": precio_e, "porciones": porc_e})
+                                "categoria": cat_e, "precio": precio_e, "porciones": porc_e, "es_pan": es_pan_e})
                             st.success("✅ Receta actualizada"); reload()
                         if ri_c2.button("🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
                             db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
