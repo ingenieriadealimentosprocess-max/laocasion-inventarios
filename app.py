@@ -928,6 +928,16 @@ elif current == "insumos":
                                     filas_dup.append({"Código":c.upper(),"Producto":nm})
                             st.dataframe(pd.DataFrame(filas_dup),hide_index=True,use_container_width=True)
                             st.caption("👉 Corrige estos códigos en Loggro para que cada producto tenga uno único.")
+                        # Fijar la alerta en Dashboard y Alertas SIN necesidad de aplicar precios
+                        if "alertas_import" not in cfg:
+                            st.warning("Para que esta alerta quede **fija** en Dashboard y Alertas, corre 1 sola vez "
+                                       "este código en el **SQL Editor** de Supabase y refresca:")
+                            st.code("ALTER TABLE config ADD COLUMN IF NOT EXISTS alertas_import TEXT;",language="sql")
+                        else:
+                            if st.button("📌 Fijar esta alerta en Dashboard y Alertas",use_container_width=True):
+                                rep={"fecha":hoy(),"codigos":[{"codigo":c.upper(),"productos":cod_names.get(c,[])} for c in sorted(_dups)]}
+                                db.set_alerta_import(json.dumps(rep,ensure_ascii=False))
+                                st.success("✅ Alerta fijada. Ya aparece en 📊 Dashboard y 🔔 Alertas."); reload()
                     o1,o2,o3,o4=st.columns(4)
                     ign0=o1.checkbox("Ignorar precios en $0",value=True)
                     solo_act=o2.checkbox("Solo activos",value=True,
