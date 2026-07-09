@@ -298,10 +298,10 @@ UNIDADES   = ["g","kg","ml","L","unidad","porción","taza","cucharada","cucharad
 CAUSAS_BAJA= ["Vencimiento","Contaminación","Error de preparación","Sobre-producción",
                "Accidente / caída","Devolución cliente","Error de porción","Otro"]
 TURNOS     = ["Mañana","Tarde","Noche"]
-CAT_RECETA    = ["Plato Principal","Entrada","Postre","Bebida","Brunch","Panadería","Pastelería","Especial","Sanduches Salados","Sanduches Dulces"]
+CAT_RECETA    = ["Plato Principal","Entrada","Postre","Bebida","Brunch","Panadería","Pastelería","Especial","Sanduches Salados","Sanduches Dulces","Tipo de pan","Tipo de leche"]
 CAT_SANDUCHE  = ["Sanduches Salados","Sanduches Dulces"]   # recetas que requieren elección de pan
-CAT_PAN_SUB   = "Tipo de pan"                              # categoría de sub-recetas que son bases de pan
-CAT_LECHE_SUB = "Tipo de leche"                            # categoría de sub-recetas que son opciones de leche
+CAT_PAN_SUB   = "Tipo de pan"                              # categoría de panes (sub-recetas O recetas)
+CAT_LECHE_SUB = "Tipo de leche"                            # categoría de leches (sub-recetas O recetas)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  NAVEGACIÓN
@@ -382,8 +382,9 @@ def cf_cat(cat=""):
     if cat in CAT_SIN_CF:
         return 0.0
     return costos_fijos
-panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]
-leches_sub    = [s for s in subrecetas if s.get("categoria")==CAT_LECHE_SUB]
+# Panes y leches pueden estar registrados como SUB-RECETAS o como RECETAS (categoría "Tipo de pan"/"Tipo de leche")
+panes_sub     = [s for s in subrecetas if s.get("categoria")==CAT_PAN_SUB]  + [r for r in recetas if r.get("categoria")==CAT_PAN_SUB]
+leches_sub    = [s for s in subrecetas if s.get("categoria")==CAT_LECHE_SUB] + [r for r in recetas if r.get("categoria")==CAT_LECHE_SUB]
 
 def consumo_insumos(ingredientes, mult=1, _prof=0):
     """Devuelve {ins_id: cantidad_bruta} que consume una lista de ingredientes.
