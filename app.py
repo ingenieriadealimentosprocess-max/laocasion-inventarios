@@ -1082,6 +1082,8 @@ elif current == "recetas":
             prec_r=rc3.number_input("Precio de venta (COP)",min_value=0.0,step=1000.0)
             req_leche_r=st.checkbox("🥛 Lleva leche (el cliente elige el tipo al vender)",
                 help="Marca esto en bebidas con leche. NO incluyas la leche en los ingredientes: se elige y se descuenta al registrar la venta.")
+            es_pan_r=st.checkbox("🍞 Es un tipo de pan (aparece para elegir en los sanduches)",
+                help="Marca esto si esta receta es un pan (Croissant, Bagel, Baguette…). Se vende sola y además se ofrece como opción de pan en los sanduches.")
             st.markdown("**Ingredientes**")
             if "ing_rows" not in st.session_state: st.session_state.ing_rows=[{}]
             opts_ing={}
@@ -1110,7 +1112,7 @@ elif current == "recetas":
                 if not n_r.strip(): st.error("El nombre es obligatorio")
                 elif not ing_data: st.error("Agrega al menos un ingrediente")
                 else:
-                    db.add_receta({"nombre":n_r.strip(),"categoria":cat_r,"porciones":porc_r,"precio":prec_r,"ingredientes":ing_data,"requiere_leche":req_leche_r})
+                    db.add_receta({"nombre":n_r.strip(),"categoria":cat_r,"porciones":porc_r,"precio":prec_r,"ingredientes":ing_data,"requiere_leche":req_leche_r,"es_pan":es_pan_r})
                     st.session_state.ing_rows=[{}]; st.success(f"✅ Receta guardada: {n_r}"); reload()
 
     with tab_imp:
