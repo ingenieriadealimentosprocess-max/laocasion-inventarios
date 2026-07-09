@@ -1203,6 +1203,16 @@ elif current == "recetas":
                         mc3.metric("Costo total",        fmt_cop(round(ct)))
                         mc4.metric("Margen",             margen_txt)
 
+                        # ── datos editables de la receta (categoría, precio, porciones) ──
+                        de1,de2,de3 = st.columns([2,1,1])
+                        _cidx = CAT_RECETA.index(rec.get("categoria")) if rec.get("categoria") in CAT_RECETA else 0
+                        cat_e   = de1.selectbox("Categoría", CAT_RECETA, index=_cidx, key=f"cat_{rec['id']}",
+                                    help="Para que un pan aparezca en el selector de sanduches, ponle categoría «Tipo de pan».")
+                        precio_e= de2.number_input("Precio venta", min_value=0.0, step=500.0,
+                                    value=float(rec.get("precio",0) or 0), key=f"precio_{rec['id']}")
+                        porc_e  = de3.number_input("Porciones", min_value=1, step=1,
+                                    value=int(rec.get("porciones",1) or 1), key=f"porc_{rec['id']}")
+
                         # ── opción: lleva leche (cliente elige tipo al vender) ──
                         req_leche_e = st.checkbox(
                             "🥛 Lleva leche (el cliente elige el tipo al vender)",
@@ -1265,8 +1275,9 @@ elif current == "recetas":
                                     "cant_neta": _cant,
                                     "merma":     _merma,
                                 })
-                            db.update_receta(rec["id"], {"ingredientes": nuevos_ing, "requiere_leche": req_leche_e})
-                            st.success("✅ Ingredientes actualizados"); reload()
+                            db.update_receta(rec["id"], {"ingredientes": nuevos_ing, "requiere_leche": req_leche_e,
+                                "categoria": cat_e, "precio": precio_e, "porciones": porc_e})
+                            st.success("✅ Receta actualizada"); reload()
                         if ri_c2.button("🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
                             db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
 
