@@ -883,6 +883,15 @@ elif current == "insumos":
 
     with tab_precios:
         st.subheader("💲 Actualizar precios desde Loggro")
+        # Resultado de la última importación (queda visible tras la recarga)
+        _pr=st.session_state.pop("prec_result",None)
+        if _pr:
+            st.success(f"✅ Resultado: **{_pr['upd']}** precios actualizados"
+                       +(f", {_pr['new']} creados" if _pr['new'] else "")
+                       +(f", **{_pr['err']} errores**" if _pr['err'] else ""))
+            if _pr.get("errs"):
+                with st.expander(f"⚠️ Ver {len(_pr['errs'])} error(es) reales"):
+                    for m in _pr["errs"]: st.write("• "+m)
         st.markdown("Sube el reporte de **insumos de Loggro** (Excel). El sistema empareja por "
                     "**Código** (o por nombre si no hay código) y actualiza el **costo** con el "
                     "*«Últ. Precio de compra (Unit.)»*, guardando el precio anterior en el historial.")
@@ -984,7 +993,7 @@ elif current == "insumos":
                     k4.metric("Inactivos omitidos",n_inact)
                     st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=340)
                     if st.button("✅ Aplicar actualización de precios",type="primary",use_container_width=True):
-                        upd=new=err=0
+                        upd=new=err=0; errs=[]
                         for item in plan:
                             try:
                                 if item[0]=="upd":
@@ -1008,13 +1017,16 @@ elif current == "insumos":
                                        "costo":round(precio,2),"ultima_entrada":hoy(),
                                        "historial_precios":[{"fecha":hoy(),"precio":round(precio,2)}] if precio>0 else []}
                                     db.add_insumo(d); new+=1
-                            except Exception: err+=1
+                            except Exception as ex:
+                                err+=1
+                                _nm=item[1]["nombre"] if item[0]=="upd" else item[1]
+                                if len(errs)<15: errs.append(f"{_nm}: {type(ex).__name__}: {ex}")
                         # Guardar/limpiar la alerta de códigos repetidos para mostrarla en 🔔 Alertas
                         try:
                             rep={"fecha":hoy(),"codigos":[{"codigo":c.upper(),"productos":cod_names.get(c,[])} for c in sorted(_dups)]}
                             db.set_alerta_import(json.dumps(rep,ensure_ascii=False))
                         except Exception: pass
-                        st.success(f"✅ {upd} precios actualizados"+(f", {new} creados" if new else "")+(f", {err} errores" if err else ""))
+                        st.session_state["prec_result"]={"upd":upd,"new":new,"err":err,"errs":errs}
                         reload()
             except Exception as e:
                 st.error(f"❌ No se pudo leer el archivo: {type(e).__name__}: {e}")
