@@ -1059,6 +1059,18 @@ elif current == "insumos":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "recetas":
     st.title("📋 Recetas")
+
+    # ── Detección: columnas de leche/pan faltantes en Supabase ──
+    _cols_rec_falta=[c for c in ("requiere_leche","es_pan","es_leche") if recetas and c not in recetas[0]]
+    if _cols_rec_falta:
+        st.error(f"⚠️ **Faltan columnas en la base de datos**: {', '.join(_cols_rec_falta)}. "
+                 "Sin ellas, las casillas «🥛 Lleva leche» y «🍞 Es un tipo de pan» **se marcan pero NO se guardan** "
+                 "(por eso no aparecen los selectores en la venta). Corre esto 1 vez en el SQL Editor de Supabase:")
+        st.code("ALTER TABLE recetas ADD COLUMN IF NOT EXISTS requiere_leche BOOLEAN DEFAULT FALSE;\n"
+                "ALTER TABLE recetas ADD COLUMN IF NOT EXISTS es_pan BOOLEAN DEFAULT FALSE;\n"
+                "ALTER TABLE recetas ADD COLUMN IF NOT EXISTS es_leche BOOLEAN DEFAULT FALSE;",language="sql")
+        st.caption("Después de correrlo: refresca la app y vuelve a marcar las casillas en cada receta (las marcas anteriores no se guardaron).")
+
     tab_list,tab_add,tab_imp,tab_exp,tab_cf = st.tabs(["📋 Listado","➕ Nueva receta","📥 Importar","📤 Exportar","⚙️ Costos fijos"])
 
     with tab_cf:
