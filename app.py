@@ -902,7 +902,7 @@ elif current == "insumos":
                 def _n(s):
                     s=str(s).lower().strip()
                     for a,b in [("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("ñ","n")]: s=s.replace(a,b)
-                    return s
+                    return " ".join(s.split())   # colapsa espacios dobles/tabs para que el nombre empareje
                 cols={_n(c):c for c in dfp.columns}
                 def _find(*keys):
                     for k in keys:
@@ -989,11 +989,16 @@ elif current == "insumos":
                                 "Acción":"🆕 Nuevo" if crear else "⚠️ No existe"})
                             if crear and nom: plan.append(("new",nom,precio,row))
                     n_upd=sum(1 for p in plan if p[0]=="upd" and p[3]); n_new=sum(1 for p in plan if p[0]=="new")
+                    _por_cod=sum(1 for p in prev if p.get("Empareja por")=="código")
+                    _por_nom=sum(1 for p in prev if p.get("Empareja por")=="nombre")
+                    _sin=sum(1 for p in prev if str(p.get("Acción","")).startswith("⚠️"))
                     k1,k2,k3,k4=st.columns(4)
                     k1.metric("Filas en archivo",len(dfp))
                     k2.metric("Cambian de precio",n_upd)
-                    k3.metric("Nuevos a crear",n_new if crear else 0)
+                    k3.metric("Sin emparejar",_sin)
                     k4.metric("Inactivos omitidos",n_inact)
+                    st.caption(f"🔗 Emparejados por **código**: {_por_cod} · por **nombre**: {_por_nom} · **sin emparejar**: {_sin}"
+                               + (f" · nuevos a crear: {n_new}" if crear else ""))
                     st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=340)
                     if st.button("✅ Aplicar actualización de precios",type="primary",use_container_width=True):
                         upd=new=err=0; errs=[]
