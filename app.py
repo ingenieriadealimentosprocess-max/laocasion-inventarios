@@ -974,21 +974,24 @@ elif current == "insumos":
                         if ign0 and precio<=0:
                             continue
                         if ins:
-                            ant=float(ins.get("costo",0) or 0)
+                            ant=round(float(ins.get("costo",0) or 0),2)
+                            pnew=round(precio,2)
+                            cambia=abs(pnew-ant)>0.001
                             prev.append({"Código":cod,"Insumo (sistema)":ins["nombre"],"Empareja por":via,
-                                "Precio actual":round(ant,2),"Precio nuevo":round(precio,2),
-                                "Cambio":round(precio-ant,2),
-                                "Acción":"✏️ Actualiza" if abs(precio-ant)>0.001 else "= Igual"})
-                            plan.append(("upd",ins,precio,row))
+                                "Precio actual":ant,"Precio nuevo":pnew,
+                                "Cambio":round(pnew-ant,2),
+                                "Acción":"✏️ Actualiza" if cambia else "= Igual"})
+                            if cambia or act_stk:
+                                plan.append(("upd",ins,pnew,cambia,row))
                         else:
                             prev.append({"Código":cod,"Insumo (sistema)":nom or "(sin nombre)","Empareja por":"—",
                                 "Precio actual":"—","Precio nuevo":round(precio,2),"Cambio":"—",
                                 "Acción":"🆕 Nuevo" if crear else "⚠️ No existe"})
                             if crear and nom: plan.append(("new",nom,precio,row))
-                    n_upd=sum(1 for p in plan if p[0]=="upd"); n_new=sum(1 for p in plan if p[0]=="new")
+                    n_upd=sum(1 for p in plan if p[0]=="upd" and p[3]); n_new=sum(1 for p in plan if p[0]=="new")
                     k1,k2,k3,k4=st.columns(4)
                     k1.metric("Filas en archivo",len(dfp))
-                    k2.metric("A actualizar",n_upd)
+                    k2.metric("Cambian de precio",n_upd)
                     k3.metric("Nuevos a crear",n_new if crear else 0)
                     k4.metric("Inactivos omitidos",n_inact)
                     st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=340)
@@ -997,17 +1000,20 @@ elif current == "insumos":
                         for item in plan:
                             try:
                                 if item[0]=="upd":
-                                    _,ins,precio,row=item
-                                    ant=float(ins.get("costo",0) or 0)
-                                    d={"costo":round(precio,2),"ultima_entrada":hoy()}
-                                    if abs(precio-ant)>0.001:
+                                    _,ins,pnew,cambia,row=item
+                                    d={}
+                                    if cambia:
+                                        ant=round(float(ins.get("costo",0) or 0),2)
+                                        d["costo"]=pnew; d["ultima_entrada"]=hoy()
                                         hist=ins.get("historial_precios") or []
-                                        hist.append({"fecha":hoy(),"precio":round(precio,2),"precio_anterior":ant})
+                                        hist.append({"fecha":hoy(),"precio":pnew,"precio_anterior":ant})
                                         d["historial_precios"]=hist
                                     if act_stk and c_cant:
                                         try: d["stock"]=float(row.get(c_cant,0) or 0)
                                         except: pass
-                                    db.update_insumo(ins["id"],d); upd+=1
+                                    if d:
+                                        db.update_insumo(ins["id"],d)
+                                        if cambia: upd+=1
                                 else:
                                     _,nom,precio,row=item
                                     d={"nombre":nom,"categoria":"Otros",
