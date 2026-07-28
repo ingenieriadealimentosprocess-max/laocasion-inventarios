@@ -512,6 +512,53 @@ def df_resumen_recetas(recs):
             "N° ingredientes":len(ings),"Ingredientes":_lista_ing(ings)})
     return pd.DataFrame(rows)
 
+def norm_txt(s):
+    """Normaliza para emparejar por nombre: minúsculas, sin acentos, sin espacios dobles."""
+    s=str(s).lower().strip()
+    for a,b in [("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("ñ","n")]: s=s.replace(a,b)
+    return " ".join(s.split())
+
+def parse_ing_loggro(txt):
+    """Convierte 'Nombre x 35 Gr' -> (nombre, 35.0, 'Gr'). Maneja formato invertido '1 x Nombre'."""
+    import re
+    t=str(txt).strip()
+    m=re.match(r'^(.*?)\s+x\s+([\d]+(?:[.,]\d+)?)\s*([A-Za-z]*)\s*$', t)
+    if m: return (m.group(1).strip(), float(m.group(2).replace(',','.')), m.group(3).strip())
+    m=re.match(r'^([\d]+(?:[.,]\d+)?)\s+x\s+(.+)$', t)
+    if m: return (m.group(2).strip(), float(m.group(1).replace(',','.')), "")
+    return None
+
+def parse_recetas_loggro(file_bytes):
+    """Lee el Excel de recetas de Loggro. Devuelve lista de recetas con sus líneas de ingrediente
+    (agrupa las filas de continuación, que traen el código vacío)."""
+    import openpyxl, io
+    wb=openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws=wb.active
+    rows=list(ws.iter_rows(values_only=True))
+    hdr=[str(c).lower() if c is not None else "" for c in rows[0]]
+    def col(*keys):
+        for k in keys:
+            for i,h in enumerate(hdr):
+                if k in h: return i
+        return None
+    ci_est=col("estado"); ci_cod=col("digo"); ci_cat=col("categor")
+    ci_nom=col("nombre"); ci_ing=col("ingrediente"); ci_pre=col("precio de venta","precio de v","precio")
+    out=[]; cur=None
+    for r in rows[1:]:
+        cod = r[ci_cod] if ci_cod is not None else None
+        ing = str(r[ci_ing]).strip() if (ci_ing is not None and r[ci_ing] is not None) else ""
+        if cod:
+            cur={"nombre":(str(r[ci_nom]).strip() if ci_nom is not None and r[ci_nom] else ""),
+                 "categoria":(str(r[ci_cat]).strip() if ci_cat is not None and r[ci_cat] else ""),
+                 "precio":(float(r[ci_pre] or 0) if ci_pre is not None else 0),
+                 "estado":(str(r[ci_est]).strip() if ci_est is not None and r[ci_est] else "Activo"),
+                 "ings":[]}
+            out.append(cur)
+            if ing and ing!="-": cur["ings"].append(ing)
+        elif cur is not None and ing and ing!="-":
+            cur["ings"].append(ing)
+    return out
+
 def alerta_import_data():
     """Devuelve el reporte de códigos repetidos guardado (o None)."""
     raw=cfg.get("alertas_import")
@@ -1071,7 +1118,102 @@ elif current == "recetas":
                 "ALTER TABLE recetas ADD COLUMN IF NOT EXISTS es_leche BOOLEAN DEFAULT FALSE;",language="sql")
         st.caption("Después de correrlo: refresca la app y vuelve a marcar las casillas en cada receta (las marcas anteriores no se guardaron).")
 
-    tab_list,tab_add,tab_imp,tab_exp,tab_cf = st.tabs(["📋 Listado","➕ Nueva receta","📥 Importar","📤 Exportar","⚙️ Costos fijos"])
+    tab_list,tab_add,tab_imp,tab_loggro,tab_exp,tab_cf = st.tabs(["📋 Listado","➕ Nueva receta","📥 Importar JSON","📥 Importar Loggro","📤 Exportar","⚙️ Costos fijos"])
+
+    with tab_loggro:
+        st.subheader("📥 Importar recetas y sub-recetas desde Loggro")
+        st.warning("⚠️ **Modo reemplazar por nombre:** las recetas/sub-recetas del archivo que ya existan se "
+                   "sobrescriben (ingredientes, precio, categoría). Las que no estén en el archivo **NO se borran**. "
+                   "Se conservan las casillas 🍞/🥛 y la merma por cocción (no se tocan).")
+        up_rl=st.file_uploader("Reporte de recetas de Loggro (.xlsx)",type=["xlsx"],key="up_rec_loggro")
+        # Resultado de la última importación
+        _rr=st.session_state.pop("rec_loggro_result",None)
+        if _rr:
+            st.success(f"✅ Resultado: {_rr['rs_up']} recetas y {_rr['ss_up']} sub-recetas actualizadas, "
+                       f"{_rr['rs_new']} recetas y {_rr['ss_new']} sub-recetas creadas."
+                       + (f" ⚠️ {_rr['err']} errores." if _rr['err'] else ""))
+        if up_rl:
+          try:
+            import re as _re
+            data_rl=parse_recetas_loggro(up_rl.getvalue())
+            solo_act_r=st.checkbox("Solo activas (ignorar 'Inactivo')",value=True,key="rl_solo_act")
+            if solo_act_r: data_rl=[d for d in data_rl if not d["estado"].lower().startswith("inactiv")]
+            es_sub=lambda d:"sub-receta" in d["categoria"].lower()
+            subs_rl=[d for d in data_rl if es_sub(d)]; recs_rl=[d for d in data_rl if not es_sub(d)]
+
+            # Mapas de nombres -> ref_id
+            ins_map={norm_txt(i["nombre"]):("ins:"+i["id"]) for i in insumos}
+            sub_ids={}   # nombre_norm -> id (existente o nuevo)
+            for s in subs_rl:
+                nn=norm_txt(s["nombre"])
+                ex=next((x for x in subrecetas if norm_txt(x["nombre"])==nn),None)
+                sub_ids[nn]=ex["id"] if ex else db.uid()
+            ref_map={**ins_map, **{k:("sub:"+v) for k,v in sub_ids.items()}}
+
+            def cat_receta(c):
+                cl=c.lower()
+                if "salado" in cl: return "Sanduches Salados"
+                if "dulce"  in cl: return "Sanduches Dulces"
+                return c
+
+            no_match={}; stats={"ok":0,"tot":0}
+            def build_ings(d,count=False):
+                out=[]
+                for line in d["ings"]:
+                    p=parse_ing_loggro(line)
+                    if not p: continue
+                    nom,qty,uni=p
+                    if count: stats["tot"]+=1
+                    ref=ref_map.get(norm_txt(nom))
+                    if ref:
+                        out.append({"ref_id":ref,"cantidad":qty,"cant_neta":qty,"merma":0})
+                        if count: stats["ok"]+=1
+                    elif count:
+                        no_match[norm_txt(nom)]=nom
+                return out
+            for d in data_rl: build_ings(d,count=True)   # solo para contar/no-match
+
+            c1,c2,c3,c4=st.columns(4)
+            c1.metric("Recetas en archivo",len(recs_rl))
+            c2.metric("Sub-recetas",len(subs_rl))
+            c3.metric("Ingredientes enlazados",f"{stats['ok']}/{stats['tot']}")
+            c4.metric("Insumos sin enlazar",len(no_match))
+            if no_match:
+                with st.expander(f"⚠️ {len(no_match)} insumos del archivo que NO existen en el sistema (esos ingredientes se omiten)"):
+                    st.dataframe(pd.DataFrame({"Insumo (en el archivo)":sorted(no_match.values())}),hide_index=True,use_container_width=True)
+                    st.caption("Crea/renombra esos insumos para que queden enlazados, o ignóralos si no aplican.")
+
+            if st.button("✅ Reemplazar recetas y sub-recetas ahora",type="primary",use_container_width=True):
+                rs_up=rs_new=ss_up=ss_new=err=0
+                # 1) Sub-recetas primero (para que sus ids existan al enlazar recetas)
+                for s in subs_rl:
+                    try:
+                        nn=norm_txt(s["nombre"])
+                        m=_re.search(r'sub-?(\d+)\s*gr?', s["nombre"].lower()); rend=float(m.group(1)) if m else 1
+                        ex=next((x for x in subrecetas if norm_txt(x["nombre"])==nn),None)
+                        payload={"nombre":s["nombre"],"rendimiento":rend,"ingredientes":build_ings(s)}
+                        if ex:
+                            db.update_subreceta(ex["id"],payload); ss_up+=1
+                        else:
+                            payload.update({"id":sub_ids[nn],"categoria":"Producción","unidad_rendimiento":"g"})
+                            db.add_subreceta(payload); ss_new+=1
+                    except Exception: err+=1
+                # 2) Recetas
+                for r in recs_rl:
+                    try:
+                        nn=norm_txt(r["nombre"])
+                        ex=next((x for x in recetas if norm_txt(x["nombre"])==nn),None)
+                        payload={"nombre":r["nombre"],"categoria":cat_receta(r["categoria"]),
+                                 "precio":r["precio"],"ingredientes":build_ings(r)}
+                        if ex:
+                            db.update_receta(ex["id"],payload); rs_up+=1
+                        else:
+                            payload.setdefault("porciones",1); db.add_receta(payload); rs_new+=1
+                    except Exception: err+=1
+                st.session_state["rec_loggro_result"]={"rs_up":rs_up,"rs_new":rs_new,"ss_up":ss_up,"ss_new":ss_new,"err":err}
+                reload()
+          except Exception as e:
+            st.error(f"❌ No se pudo procesar el archivo: {type(e).__name__}: {e}")
 
     with tab_cf:
         st.subheader("Costos fijos de cocina")

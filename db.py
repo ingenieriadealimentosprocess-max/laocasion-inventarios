@@ -78,7 +78,7 @@ def get_recetas():
 
 
 def add_receta(data: dict):
-    data["id"] = uid()
+    data.setdefault("id", uid())
     data.setdefault("creado_en", hoy())
     data.setdefault("ingredientes", [])
     _safe_write(lambda d: get_client().table("recetas").insert(d).execute(), data)
@@ -99,7 +99,7 @@ def get_subrecetas():
 
 
 def add_subreceta(data: dict):
-    data["id"] = uid()
+    data.setdefault("id", uid())
     data.setdefault("creado_en", hoy())
     data.setdefault("ingredientes", [])
     _safe_write(lambda d: get_client().table("subrecetas").insert(d).execute(), data)
