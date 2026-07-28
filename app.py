@@ -1143,12 +1143,16 @@ elif current == "recetas":
 
             # Mapas de nombres -> ref_id
             ins_map={norm_txt(i["nombre"]):("ins:"+i["id"]) for i in insumos}
-            sub_ids={}   # nombre_norm -> id (existente o nuevo)
+            # Sub-recetas: parte de TODAS las que ya existen en el sistema...
+            sub_map={norm_txt(x["nombre"]):("sub:"+x["id"]) for x in subrecetas}
+            # ...y añade/actualiza las que trae el archivo (id existente o nuevo)
+            sub_ids={}   # nombre_norm -> id (para las del archivo)
             for s in subs_rl:
                 nn=norm_txt(s["nombre"])
                 ex=next((x for x in subrecetas if norm_txt(x["nombre"])==nn),None)
                 sub_ids[nn]=ex["id"] if ex else db.uid()
-            ref_map={**ins_map, **{k:("sub:"+v) for k,v in sub_ids.items()}}
+                sub_map[nn]="sub:"+sub_ids[nn]
+            ref_map={**ins_map, **sub_map}
 
             def cat_receta(c):
                 cl=c.lower()
