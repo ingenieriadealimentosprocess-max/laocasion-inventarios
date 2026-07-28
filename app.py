@@ -541,16 +541,17 @@ def parse_recetas_loggro(file_bytes):
             for i,h in enumerate(hdr):
                 if k in h: return i
         return None
-    ci_est=col("estado"); ci_cod=col("digo"); ci_cat=col("categor")
+    ci_est=col("estado"); ci_cat=col("categor")
     ci_nom=col("nombre"); ci_ing=col("ingrediente"); ci_pre=col("precio de venta","precio de v","precio")
     out=[]; cur=None
     for r in rows[1:]:
-        cod = r[ci_cod] if ci_cod is not None else None
+        # Una NUEVA receta/sub-receta empieza cuando hay NOMBRE (el código puede venir vacío).
+        nom = r[ci_nom] if ci_nom is not None else None
         ing = str(r[ci_ing]).strip() if (ci_ing is not None and r[ci_ing] is not None) else ""
-        if cod:
-            cur={"nombre":(str(r[ci_nom]).strip() if ci_nom is not None and r[ci_nom] else ""),
+        if nom is not None and str(nom).strip():
+            cur={"nombre":str(nom).strip(),
                  "categoria":(str(r[ci_cat]).strip() if ci_cat is not None and r[ci_cat] else ""),
-                 "precio":(float(r[ci_pre] or 0) if ci_pre is not None else 0),
+                 "precio":(float(r[ci_pre] or 0) if ci_pre is not None and r[ci_pre] is not None else 0),
                  "estado":(str(r[ci_est]).strip() if ci_est is not None and r[ci_est] else "Activo"),
                  "ings":[]}
             out.append(cur)
@@ -1138,7 +1139,8 @@ elif current == "recetas":
             data_rl=parse_recetas_loggro(up_rl.getvalue())
             solo_act_r=st.checkbox("Solo activas (ignorar 'Inactivo')",value=True,key="rl_solo_act")
             if solo_act_r: data_rl=[d for d in data_rl if not d["estado"].lower().startswith("inactiv")]
-            es_sub=lambda d:"sub-receta" in d["categoria"].lower()
+            # Es sub-receta si el NOMBRE trae 'sub-NNNgr' o la categoría lo dice
+            es_sub=lambda d: bool(_re.search(r'sub-?\d+\s*gr', d["nombre"].lower())) or "sub-receta" in d["categoria"].lower()
             subs_rl=[d for d in data_rl if es_sub(d)]; recs_rl=[d for d in data_rl if not es_sub(d)]
 
             # Mapas de nombres -> ref_id
@@ -1183,9 +1185,11 @@ elif current == "recetas":
             c3.metric("Ingredientes enlazados",f"{stats['ok']}/{stats['tot']}")
             c4.metric("Insumos sin enlazar",len(no_match))
             if no_match:
-                with st.expander(f"⚠️ {len(no_match)} insumos del archivo que NO existen en el sistema (esos ingredientes se omiten)"):
-                    st.dataframe(pd.DataFrame({"Insumo (en el archivo)":sorted(no_match.values())}),hide_index=True,use_container_width=True)
-                    st.caption("Crea/renombra esos insumos para que queden enlazados, o ignóralos si no aplican.")
+                with st.expander(f"⚠️ {len(no_match)} ingredientes del archivo que NO enlazan (se omiten)",expanded=True):
+                    st.dataframe(pd.DataFrame({"Ingrediente (en el archivo)":sorted(no_match.values())}),
+                                 hide_index=True,use_container_width=True,height=300)
+                    st.caption("Son insumos o sub-recetas cuyo nombre no coincide con el sistema. "
+                               "Crea/renombra para que enlacen, o ignóralos si no aplican.")
 
             if st.button("✅ Reemplazar recetas y sub-recetas ahora",type="primary",use_container_width=True):
                 rs_up=rs_new=ss_up=ss_new=err=0
