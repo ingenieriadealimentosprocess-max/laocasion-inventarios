@@ -1139,9 +1139,14 @@ elif current == "recetas":
             data_rl=parse_recetas_loggro(up_rl.getvalue())
             solo_act_r=st.checkbox("Solo activas (ignorar 'Inactivo')",value=True,key="rl_solo_act")
             if solo_act_r: data_rl=[d for d in data_rl if not d["estado"].lower().startswith("inactiv")]
-            # Es sub-receta si el NOMBRE trae 'sub-NNNgr' o la categoría lo dice
-            es_sub=lambda d: bool(_re.search(r'sub-?\d+\s*gr', d["nombre"].lower())) or "sub-receta" in d["categoria"].lower()
+            # Omitir ítems sin ingredientes (encabezados basura como "General" o recetas vacías)
+            _vacias=[d["nombre"] for d in data_rl if not d["ings"]]
+            data_rl=[d for d in data_rl if d["ings"]]
+            # Es sub-receta si el NOMBRE trae 'sub-NNNg' / 'sub-NNNgr' o la categoría lo dice
+            es_sub=lambda d: bool(_re.search(r'sub-?\d+\s*gr?', d["nombre"].lower())) or "sub-receta" in d["categoria"].lower()
             subs_rl=[d for d in data_rl if es_sub(d)]; recs_rl=[d for d in data_rl if not es_sub(d)]
+            if _vacias:
+                st.caption(f"ℹ️ Se omiten {len(_vacias)} ítem(s) sin ingredientes: {', '.join(_vacias[:6])}{'…' if len(_vacias)>6 else ''}")
 
             # Mapas de nombres -> ref_id
             ins_map={norm_txt(i["nombre"]):("ins:"+i["id"]) for i in insumos}
