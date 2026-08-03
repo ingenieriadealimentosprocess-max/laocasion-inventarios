@@ -1420,7 +1420,9 @@ elif current == "recetas":
                         mc3.metric("Costo total",        fmt_cop(round(ct)))
                         mc4.metric("Margen",             margen_txt)
 
-                        # ── datos editables de la receta (categoría, precio, porciones) ──
+                        # ── datos editables de la receta (nombre, categoría, precio, porciones) ──
+                        nom_e   = st.text_input("✏️ Nombre de la receta", value=rec["nombre"], key=f"nom_{rec['id']}",
+                                    help="Cámbialo para que coincida con el reporte de ventas de Loggro (así enlaza al importar ventas).")
                         de1,de2,de3 = st.columns([2,1,1])
                         _cidx = CAT_RECETA.index(rec.get("categoria")) if rec.get("categoria") in CAT_RECETA else 0
                         cat_e   = de1.selectbox("Categoría", CAT_RECETA, index=_cidx, key=f"cat_{rec['id']}")
@@ -1499,8 +1501,10 @@ elif current == "recetas":
                                     "cant_neta": _cant,
                                     "merma":     _merma,
                                 })
-                            db.update_receta(rec["id"], {"ingredientes": nuevos_ing, "requiere_leche": req_leche_e,
-                                "categoria": cat_e, "precio": precio_e, "porciones": porc_e, "es_pan": es_pan_e})
+                            _upd_r={"ingredientes": nuevos_ing, "requiere_leche": req_leche_e,
+                                "categoria": cat_e, "precio": precio_e, "porciones": porc_e, "es_pan": es_pan_e}
+                            if nom_e.strip(): _upd_r["nombre"]=nom_e.strip()
+                            db.update_receta(rec["id"], _upd_r)
                             st.success("✅ Receta actualizada"); reload()
                         if ri_c2.button("🗑️ Eliminar receta", type="secondary", key=f"del_rec_{rec['id']}"):
                             db.delete_receta(rec["id"]); st.warning("Receta eliminada"); reload()
@@ -1678,6 +1682,9 @@ elif current == "subrecetas":
                         km2.metric("Costo elaboración", fmt_cop(round(ct_sub)))
                         km3.metric("Costo / unidad",    fmt_cop(round(ct_sub/rend_ef)))
 
+                        # ── nombre editable ──
+                        nom_se = st.text_input("✏️ Nombre de la sub-receta", value=sub["nombre"], key=f"noms_{sub['id']}",
+                                    help="Debe coincidir con cómo se llama en las recetas (ej: 'Reducción balsámico sub-1800gr').")
                         # ── rendimiento, unidad y merma por cocción (editables) ──
                         re1, re2, re3 = st.columns(3)
                         rend_e = re1.number_input(
@@ -1750,8 +1757,10 @@ elif current == "subrecetas":
                                     "cant_neta": _cant,
                                     "merma":     _merma,
                                 })
-                            db.update_subreceta(sub["id"], {"ingredientes": nuevos_si, "merma_coccion": merma_coc_e,
-                                "rendimiento": rend_e, "unidad_rendimiento": u_e})
+                            _upd_s={"ingredientes": nuevos_si, "merma_coccion": merma_coc_e,
+                                "rendimiento": rend_e, "unidad_rendimiento": u_e}
+                            if nom_se.strip(): _upd_s["nombre"]=nom_se.strip()
+                            db.update_subreceta(sub["id"], _upd_s)
                             st.success("✅ Sub-receta actualizada"); reload()
                         if si_c2.button("🗑️ Eliminar sub-receta", type="secondary", key=f"del_sub_{sub['id']}"):
                             db.delete_subreceta(sub["id"]); st.warning("Eliminada"); reload()
