@@ -1833,12 +1833,13 @@ elif current == "movimientos":
 
             if st.button("✅ Registrar ventas y descontar inventario",type="primary",use_container_width=True):
                 n_mov=n_ins=err=0
-                # 1) Descontar inventario (agregado, una vez por insumo)
+                # 1) Descontar inventario (agregado, una vez por insumo).
+                #    Descuento EXACTO: permite stock negativo (refleja el déficit real, igual que la vista previa).
                 for iid,q in need_total.items():
                     try:
                         ins=next((i for i in insumos if i["id"]==iid),None)
                         if ins:
-                            db.update_insumo(iid,{"stock":max(0,(ins.get("stock",0) or 0)-q)}); n_ins+=1
+                            db.update_insumo(iid,{"stock":round((ins.get("stock",0) or 0)-q,3)}); n_ins+=1
                     except Exception: err+=1
                 # 2) Un movimiento de venta por producto (con la cantidad total del período)
                 fecha_mov=str(max(fechas)) if fechas else hoy()
