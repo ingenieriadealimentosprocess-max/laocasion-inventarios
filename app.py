@@ -2172,11 +2172,16 @@ elif current == "kardex":
                         ventas_k.append({"tipo":"venta","nombre":f"Venta: {rec_v['nombre']}","cantidad":bruta,
                             "costo_unit":ins_k.get("costo",0),"fecha":m.get("fecha"),"responsable":m.get("responsable","—"),"signo":-1})
             all_k=sorted([dict(m,signo=1 if m.get("tipo")=="entrada" else -1) for m in movs_k]+ventas_k,key=lambda m:m.get("fecha",""))
+            _ent   = sum(m["cantidad"] for m in all_k if m.get("tipo")=="entrada")
+            _salman= sum(m["cantidad"] for m in all_k if m.get("tipo")=="salida")
+            _vent  = sum(m["cantidad"] for m in all_k if m.get("tipo")=="venta")
+            _baja  = sum(m["cantidad"] for m in all_k if m.get("tipo")=="baja")
             kk1,kk2,kk3,kk4=st.columns(4)
-            kk1.metric("Entradas",fmt_n(sum(m["cantidad"] for m in all_k if m.get("tipo")=="entrada")))
-            kk2.metric("Salidas",fmt_n(sum(m["cantidad"] for m in all_k if m.get("tipo")=="salida")))
-            kk3.metric("Consumido ventas",fmt_n(sum(m["cantidad"] for m in all_k if m.get("tipo")=="venta")))
-            kk4.metric("Bajas",fmt_n(sum(m["cantidad"] for m in all_k if m.get("tipo")=="baja")))
+            kk1.metric("Entradas",fmt_n(_ent))
+            kk2.metric("Salidas totales",fmt_n(_salman+_vent+_baja),
+                       help="Todo lo que salió: manuales + ventas + bajas.")
+            kk3.metric("↳ por ventas",fmt_n(_vent))
+            kk4.metric("↳ por bajas",fmt_n(_baja))
             if all_k:
                 balance=0.0; rows_k=[]
                 for m in all_k:
