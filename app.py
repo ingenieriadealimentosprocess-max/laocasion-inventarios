@@ -1788,20 +1788,36 @@ elif current == "movimientos":
             ventas, fechas = parse_ventas_loggro(up_vt.getvalue())
             periodo = f"{min(fechas)} a {max(fechas)}" if fechas else "—"
             rec_map={norm_txt(r["nombre"]):r for r in recetas}
-            need_total={}; matched=[]; nomatch=[]
+            auto_matched=[]; nomatch=[]
             for prod,qty in ventas.items():
                 rec=rec_map.get(norm_txt(prod))
-                if rec:
-                    matched.append((prod,qty,rec))
-                    for iid,q in consumo_insumos(rec.get("ingredientes",[]),qty).items():
-                        need_total[iid]=need_total.get(iid,0)+q
-                else:
-                    nomatch.append((prod,qty))
+                if rec: auto_matched.append((prod,qty,rec))
+                else: nomatch.append((prod,qty))
+
+            # 🔗 Vinculación manual: productos que existen como receta con otro nombre (ej: "Dip ...")
+            manual=[]
+            if nomatch:
+                st.markdown("**🔗 Vincular productos sin receta** — elige a qué receta corresponde cada uno "
+                            "(los que dejes en «— Sin vincular —» no descuentan):")
+                opts_rn=["— Sin vincular —"]+sorted(r["nombre"] for r in recetas)
+                for prod,qty in sorted(nomatch,key=lambda x:-x[1]):
+                    sel=st.selectbox(f"🍽️ {prod}  ({int(qty)} und)",opts_rn,key=f"vinc_{norm_txt(prod)}")
+                    if sel!="— Sin vincular —":
+                        rec=next((r for r in recetas if r["nombre"]==sel),None)
+                        if rec: manual.append((prod,qty,rec))
+
+            matched=auto_matched+manual
+            sin_vinc=[(p,q) for (p,q) in nomatch if not any(m[0]==p for m in manual)]
+            need_total={}
+            for prod,qty,rec in matched:
+                for iid,q in consumo_insumos(rec.get("ingredientes",[]),qty).items():
+                    need_total[iid]=need_total.get(iid,0)+q
+
             k1,k2,k3,k4=st.columns(4)
             k1.metric("Período",periodo)
             k2.metric("Productos vendidos",len(ventas))
-            k3.metric("Enlazan a receta",len(matched))
-            k4.metric("Sin receta (se omiten)",len(nomatch))
+            k3.metric("Enlazadas",len(matched))
+            k4.metric("Sin vincular",len(sin_vinc))
 
             if need_total:
                 st.markdown("**Insumos que se descontarán (total del período):**")
@@ -1814,12 +1830,6 @@ elif current == "movimientos":
                             "Stock actual":round(stk,2),"Stock final":round(stk-q,2),
                             "Unidad":ins.get("unidad",""),"⚠️":"NEGATIVO" if stk-q<0 else ""})
                 st.dataframe(pd.DataFrame(rows_nt),hide_index=True,use_container_width=True,height=300)
-
-            if nomatch:
-                with st.expander(f"⚠️ {len(nomatch)} productos vendidos SIN receta (no descuentan)"):
-                    st.dataframe(pd.DataFrame([{"Producto":p,"Unidades":int(q)} for p,q in sorted(nomatch,key=lambda x:-x[1])]),
-                                 hide_index=True,use_container_width=True)
-                    st.caption("Son productos sin receta creada (o con nombre distinto). Créalos/renómbralos para que descuenten.")
 
             if st.button("✅ Registrar ventas y descontar inventario",type="primary",use_container_width=True):
                 n_mov=n_ins=err=0
