@@ -1168,7 +1168,7 @@ elif current == "recetas":
             _vacias=[d["nombre"] for d in data_rl if not d["ings"]]
             data_rl=[d for d in data_rl if d["ings"]]
             # Es sub-receta si el NOMBRE trae 'sub-NNNg' / 'sub-NNNgr' o la categoría lo dice
-            es_sub=lambda d: bool(_re.search(r'sub-?\d+\s*gr?', d["nombre"].lower())) or "sub-receta" in d["categoria"].lower()
+            es_sub=lambda d: bool(_re.search(r'sub-?\s*\d+\s*gr?', d["nombre"].lower())) or "sub-receta" in d["categoria"].lower()
             subs_rl=[d for d in data_rl if es_sub(d)]; recs_rl=[d for d in data_rl if not es_sub(d)]
             if _vacias:
                 st.caption(f"ℹ️ Se omiten {len(_vacias)} ítem(s) sin ingredientes: {', '.join(_vacias[:6])}{'…' if len(_vacias)>6 else ''}")
@@ -1227,7 +1227,7 @@ elif current == "recetas":
                 for s in subs_rl:
                     try:
                         nn=norm_txt(s["nombre"])
-                        m=_re.search(r'sub-?(\d+)\s*gr?', s["nombre"].lower()); rend=float(m.group(1)) if m else 1
+                        m=_re.search(r'sub-?\s*(\d+)\s*gr?', s["nombre"].lower()); rend=float(m.group(1)) if m else 1
                         ex=next((x for x in subrecetas if norm_txt(x["nombre"])==nn),None)
                         payload={"nombre":s["nombre"],"rendimiento":rend,"ingredientes":build_ings(s)}
                         if ex:
