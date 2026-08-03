@@ -560,6 +560,31 @@ def parse_recetas_loggro(file_bytes):
             cur["ings"].append(ing)
     return out
 
+def parse_ventas_loggro(file_bytes):
+    """Lee el reporte de ventas por productos de Loggro. Agrupa por Producto -> unidades totales.
+    Devuelve (dict {producto: cantidad}, lista de fechas)."""
+    import openpyxl, io
+    wb=openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws=wb.active
+    rows=list(ws.iter_rows(values_only=True))
+    hdr=[str(c).lower() if c is not None else "" for c in rows[0]]
+    def col(*keys):
+        for k in keys:
+            for i,h in enumerate(hdr):
+                if k in h: return i
+    ci_fec=col("fecha"); ci_prod=col("producto"); ci_cant=col("cantidad")
+    ventas={}; fechas=[]
+    for r in rows[1:]:
+        prod=str(r[ci_prod]).strip() if (ci_prod is not None and r[ci_prod]) else ""
+        if not prod: continue
+        try: c=float(r[ci_cant] or 0)
+        except: c=0
+        ventas[prod]=ventas.get(prod,0)+c
+        if ci_fec is not None and r[ci_fec] is not None:
+            try: fechas.append(r[ci_fec].date() if hasattr(r[ci_fec],"date") else r[ci_fec])
+            except Exception: pass
+    return ventas, fechas
+
 def alerta_import_data():
     """Devuelve el reporte de códigos repetidos guardado (o None)."""
     raw=cfg.get("alertas_import")
@@ -1737,7 +1762,78 @@ elif current == "subrecetas":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "movimientos":
     st.title("🔄 Movimientos de Inventario")
-    tab_e,tab_s,tab_v,tab_hist=st.tabs(["📥 Entrada","📤 Salida","🍽️ Venta / Despacho","📋 Historial"])
+    tab_e,tab_s,tab_v,tab_vimp,tab_hist=st.tabs(["📥 Entrada","📤 Salida","🍽️ Venta / Despacho","📥 Importar ventas Loggro","📋 Historial"])
+
+    with tab_vimp:
+        st.subheader("📥 Importar ventas desde Loggro (descuenta inventario)")
+        st.warning("⚠️ Esto **crea movimientos de venta** y **descuenta del inventario** los insumos de cada "
+                   "receta vendida (incluyendo los de sus sub-recetas). **No importes el mismo período dos veces** "
+                   "— descontaría el inventario doble.")
+        up_vt=st.file_uploader("Reporte de ventas por productos (.xlsx)",type=["xlsx"],key="up_ventas_loggro")
+        _vres=st.session_state.pop("ventas_result",None)
+        if _vres:
+            st.success(f"✅ {_vres['n_mov']} ventas registradas · {_vres['n_ins']} insumos descontados"
+                       + (f" · {_vres['err']} errores" if _vres['err'] else ""))
+        if up_vt:
+          try:
+            ventas, fechas = parse_ventas_loggro(up_vt.getvalue())
+            periodo = f"{min(fechas)} a {max(fechas)}" if fechas else "—"
+            rec_map={norm_txt(r["nombre"]):r for r in recetas}
+            need_total={}; matched=[]; nomatch=[]
+            for prod,qty in ventas.items():
+                rec=rec_map.get(norm_txt(prod))
+                if rec:
+                    matched.append((prod,qty,rec))
+                    for iid,q in consumo_insumos(rec.get("ingredientes",[]),qty).items():
+                        need_total[iid]=need_total.get(iid,0)+q
+                else:
+                    nomatch.append((prod,qty))
+            k1,k2,k3,k4=st.columns(4)
+            k1.metric("Período",periodo)
+            k2.metric("Productos vendidos",len(ventas))
+            k3.metric("Enlazan a receta",len(matched))
+            k4.metric("Sin receta (se omiten)",len(nomatch))
+
+            if need_total:
+                st.markdown("**Insumos que se descontarán (total del período):**")
+                rows_nt=[]
+                for iid,q in sorted(need_total.items(),key=lambda x:-x[1]):
+                    ins=next((i for i in insumos if i["id"]==iid),None)
+                    if ins:
+                        stk=ins.get("stock",0)
+                        rows_nt.append({"Insumo":ins["nombre"],"A descontar":round(q,2),
+                            "Stock actual":round(stk,2),"Stock final":round(stk-q,2),
+                            "Unidad":ins.get("unidad",""),"⚠️":"NEGATIVO" if stk-q<0 else ""})
+                st.dataframe(pd.DataFrame(rows_nt),hide_index=True,use_container_width=True,height=300)
+
+            if nomatch:
+                with st.expander(f"⚠️ {len(nomatch)} productos vendidos SIN receta (no descuentan)"):
+                    st.dataframe(pd.DataFrame([{"Producto":p,"Unidades":int(q)} for p,q in sorted(nomatch,key=lambda x:-x[1])]),
+                                 hide_index=True,use_container_width=True)
+                    st.caption("Son productos sin receta creada (o con nombre distinto). Créalos/renómbralos para que descuenten.")
+
+            if st.button("✅ Registrar ventas y descontar inventario",type="primary",use_container_width=True):
+                n_mov=n_ins=err=0
+                # 1) Descontar inventario (agregado, una vez por insumo)
+                for iid,q in need_total.items():
+                    try:
+                        ins=next((i for i in insumos if i["id"]==iid),None)
+                        if ins:
+                            db.update_insumo(iid,{"stock":max(0,(ins.get("stock",0) or 0)-q)}); n_ins+=1
+                    except Exception: err+=1
+                # 2) Un movimiento de venta por producto (con la cantidad total del período)
+                fecha_mov=str(max(fechas)) if fechas else hoy()
+                for prod,qty,rec in matched:
+                    try:
+                        db.add_movimiento({"tipo":"venta","receta_id":rec["id"],
+                            "nombre":f"{prod}"+(f" x{int(qty)}" if qty>1 else ""),
+                            "cantidad":qty,"fecha":fecha_mov,"responsable":"Import Loggro",
+                            "nota":f"Venta importada Loggro · período {periodo}"}); n_mov+=1
+                    except Exception: err+=1
+                st.session_state["ventas_result"]={"n_mov":n_mov,"n_ins":n_ins,"err":err}
+                reload()
+          except Exception as e:
+            st.error(f"❌ No se pudo procesar el archivo: {type(e).__name__}: {e}")
 
     with tab_e:
         st.subheader("Registrar entrada")
