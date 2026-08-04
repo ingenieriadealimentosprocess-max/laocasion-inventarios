@@ -518,6 +518,12 @@ def norm_txt(s):
     for a,b in [("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("ñ","n")]: s=s.replace(a,b)
     return " ".join(s.split())
 
+def _duplicados_por_nombre(items):
+    """Agrupa por nombre normalizado; devuelve {nombre_norm: [items]} solo con duplicados (>1)."""
+    g={}
+    for it in items: g.setdefault(norm_txt(it.get("nombre","")),[]).append(it)
+    return {k:v for k,v in g.items() if len(v)>1}
+
 def parse_ing_loggro(txt):
     """Convierte 'Nombre x 35 Gr' -> (nombre, 35.0, 'Gr'). Maneja formato invertido '1 x Nombre'."""
     import re
@@ -1170,6 +1176,12 @@ elif current == "recetas":
             # Es sub-receta si el NOMBRE trae 'sub-NNNg' / 'sub-NNNgr' o la categoría lo dice
             es_sub=lambda d: bool(_re.search(r'sub-?\s*\d+\s*gr?', d["nombre"].lower())) or "sub-receta" in d["categoria"].lower()
             subs_rl=[d for d in data_rl if es_sub(d)]; recs_rl=[d for d in data_rl if not es_sub(d)]
+            # Evitar duplicados: si el archivo trae el mismo nombre varias veces, procesar 1 sola vez
+            def _uniq(lst):
+                seen={}
+                for d in lst: seen[norm_txt(d["nombre"])]=d
+                return list(seen.values())
+            subs_rl=_uniq(subs_rl); recs_rl=_uniq(recs_rl)
             if _vacias:
                 st.caption(f"ℹ️ Se omiten {len(_vacias)} ítem(s) sin ingredientes: {', '.join(_vacias[:6])}{'…' if len(_vacias)>6 else ''}")
 
@@ -1383,6 +1395,24 @@ elif current == "recetas":
             st.error(f"❌ Error al generar la exportación: {type(e).__name__}: {e}")
 
     with tab_list:
+        # 🧹 Limpiar recetas duplicadas (mismo nombre)
+        _dups_rec=_duplicados_por_nombre(recetas)
+        if _dups_rec:
+            _extra_r=sum(len(v)-1 for v in _dups_rec.values())
+            with st.expander(f"🧹 Hay {len(_dups_rec)} receta(s) repetida(s) — {_extra_r} copia(s) de más. **Limpiar**",expanded=True):
+                st.dataframe(pd.DataFrame([{"Receta":v[0]["nombre"],"Copias":len(v)} for v in _dups_rec.values()]),
+                             hide_index=True,use_container_width=True)
+                st.caption("Se conserva la copia más completa (con más ingredientes) y se borran las demás.")
+                if st.button("🧹 Eliminar recetas duplicadas",type="primary",key="dedup_rec"):
+                    borradas_r=0
+                    for v in _dups_rec.values():
+                        keep=max(v,key=lambda r:len(r.get("ingredientes",[])))
+                        for r in v:
+                            if r["id"]!=keep["id"]:
+                                try: db.delete_receta(r["id"]); borradas_r+=1
+                                except Exception: pass
+                    st.success(f"✅ {borradas_r} receta(s) duplicada(s) eliminada(s)."); reload()
+
         fl1, fl2 = st.columns([3,2])
         busq_r = fl1.text_input("🔍 Buscar receta", key="busq_r")
         catf   = fl2.selectbox("Filtrar categoría", ["Todas"]+CAT_RECETA, key="rcatf")
@@ -1652,6 +1682,29 @@ elif current == "subrecetas":
     with tab_list:
         if not subrecetas: st.info("Sin sub-recetas aún.")
         else:
+            # 🧹 Limpiar sub-recetas duplicadas (mismo nombre)
+            _dups_sr=_duplicados_por_nombre(subrecetas)
+            if _dups_sr:
+                _extra=sum(len(v)-1 for v in _dups_sr.values())
+                with st.expander(f"🧹 Hay {len(_dups_sr)} sub-receta(s) repetida(s) — {_extra} copia(s) de más. **Limpiar**",expanded=True):
+                    st.dataframe(pd.DataFrame([{"Sub-receta":v[0]["nombre"],"Copias":len(v)} for v in _dups_sr.values()]),
+                                 hide_index=True,use_container_width=True)
+                    st.caption("Se conserva la copia enlazada a las recetas (o la más completa) y se borran las demás. Las referencias no se rompen.")
+                    if st.button("🧹 Eliminar duplicados de sub-recetas",type="primary",key="dedup_sub"):
+                        ref={}
+                        for r in recetas+subrecetas:
+                            for ing in r.get("ingredientes",[]):
+                                rid=ing.get("ref_id","")
+                                if rid.startswith("sub:"): ref[rid[4:]]=ref.get(rid[4:],0)+1
+                        borradas=0
+                        for v in _dups_sr.values():
+                            keep=max(v,key=lambda s:(ref.get(s["id"],0),len(s.get("ingredientes",[]))))
+                            for s in v:
+                                if s["id"]!=keep["id"]:
+                                    try: db.delete_subreceta(s["id"]); borradas+=1
+                                    except Exception: pass
+                        st.success(f"✅ {borradas} sub-receta(s) duplicada(s) eliminada(s)."); reload()
+
             busq_s2 = st.text_input("🔍 Buscar sub-receta", key="busq_sub")
             lista_s2 = [s for s in subrecetas
                         if not busq_s2 or busq_s2.lower() in s["nombre"].lower()]
