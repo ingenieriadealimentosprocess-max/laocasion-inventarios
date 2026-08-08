@@ -1066,12 +1066,21 @@ elif current == "insumos":
                         nom=str(row.get(c_nom,"") if c_nom else "").strip()
                         try: precio=float(row.get(c_pre,0) or 0)
                         except: precio=0.0
-                        # Emparejar PRIMERO por NOMBRE (los códigos de Loggro cambian a veces).
-                        # El código se usa solo como respaldo, y solo si es único en el archivo.
-                        cl=cod.lower(); ins=None; via=""
-                        ins=by_nom.get(_n(nom)); via="nombre" if ins else ""
-                        if ins is None and cl and cod_dups.get(cl,0)==1:
-                            ins=by_id.get(cl); via="código" if ins else ""
+                        # Emparejar por NOMBRE y por CÓDIGO:
+                        #  - si ambos apuntan al MISMO insumo -> "código+nombre" (perfecto)
+                        #  - si no -> por nombre (los códigos de Loggro cambian a veces)
+                        #  - si el nombre no existe -> por código (respaldo, solo si es único)
+                        cl=cod.lower()
+                        ins_nom=by_nom.get(_n(nom))
+                        ins_cod=by_id.get(cl) if (cl and cod_dups.get(cl,0)==1) else None
+                        if ins_nom and ins_cod and str(ins_nom["id"])==str(ins_cod["id"]):
+                            ins=ins_nom; via="código+nombre"
+                        elif ins_nom:
+                            ins=ins_nom; via="nombre"
+                        elif ins_cod:
+                            ins=ins_cod; via="código"
+                        else:
+                            ins=None; via=""
                         if ign0 and precio<=0:
                             continue
                         if ins:
@@ -1095,6 +1104,7 @@ elif current == "insumos":
                                 "Acción":"🆕 Nuevo" if crear else "⚠️ No existe"})
                             if crear and nom: plan.append(("new",nom,precio,row))
                     n_upd=sum(1 for p in plan if p[0]=="upd" and p[3]); n_new=sum(1 for p in plan if p[0]=="new")
+                    _por_ambos=sum(1 for p in prev if p.get("Empareja por")=="código+nombre")
                     _por_cod=sum(1 for p in prev if p.get("Empareja por")=="código")
                     _por_nom=sum(1 for p in prev if p.get("Empareja por")=="nombre")
                     _sin=sum(1 for p in prev if str(p.get("Acción","")).startswith("⚠️"))
@@ -1103,7 +1113,8 @@ elif current == "insumos":
                     k2.metric("Cambian de precio",n_upd)
                     k3.metric("Sin emparejar",_sin)
                     k4.metric("Inactivos omitidos",n_inact)
-                    st.caption(f"🔗 Emparejados por **código**: {_por_cod} · por **nombre**: {_por_nom} · **sin emparejar**: {_sin}"
+                    st.caption(f"🔗 Coinciden **código+nombre**: {_por_ambos} · solo por **nombre**: {_por_nom} · "
+                               f"solo por **código**: {_por_cod} · **sin emparejar**: {_sin}"
                                + (f" · nuevos a crear: {n_new}" if crear else ""))
                     st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=340)
                     if st.button("✅ Aplicar actualización de precios",type="primary",use_container_width=True):
