@@ -1066,13 +1066,12 @@ elif current == "insumos":
                         nom=str(row.get(c_nom,"") if c_nom else "").strip()
                         try: precio=float(row.get(c_pre,0) or 0)
                         except: precio=0.0
-                        # Solo confiar en el código si es ÚNICO en el archivo; si está
-                        # duplicado, emparejar por nombre exacto para no cruzar insumos.
+                        # Emparejar PRIMERO por NOMBRE (los códigos de Loggro cambian a veces).
+                        # El código se usa solo como respaldo, y solo si es único en el archivo.
                         cl=cod.lower(); ins=None; via=""
-                        if cl and cod_dups.get(cl,0)==1:
+                        ins=by_nom.get(_n(nom)); via="nombre" if ins else ""
+                        if ins is None and cl and cod_dups.get(cl,0)==1:
                             ins=by_id.get(cl); via="código" if ins else ""
-                        if ins is None:
-                            ins=by_nom.get(_n(nom)); via="nombre" if ins else ""
                         if ign0 and precio<=0:
                             continue
                         if ins:
