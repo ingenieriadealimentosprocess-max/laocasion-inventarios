@@ -1622,14 +1622,19 @@ elif current == "subrecetas":
                 index=cols.index(_guess("nombre","sub","item","producto")) if _guess("nombre","sub","item","producto") in cols else 0)
             col_stk=gc2.selectbox("Columna del STOCK / cantidad",cols,
                 index=cols.index(_guess("stock","cantidad","existencia","actual")) if _guess("stock","cantidad","existencia","actual") in cols else (1 if len(cols)>1 else 0))
+            import re as _re2
+            def _base_sub(n):
+                # nombre base sin el sufijo 'sub-NNNgr' (para emparejar aunque cambie el rendimiento)
+                return " ".join(_re2.sub(r'sub-?\s*[\d.,]+\s*g?r?\s*$','',norm_txt(n)).split())
             by_nom_s={norm_txt(s["nombre"]):s for s in subrecetas}
+            by_base_s={_base_sub(s["nombre"]):s for s in subrecetas}
             prev=[]; plan=[]; nomatch=[]
             for _,r in dfs.iterrows():
                 nom=str(r.get(col_nom,"") or "").strip()
                 if not nom: continue
                 try: stkv=float(r.get(col_stk,0) or 0)
                 except: stkv=0
-                sub=by_nom_s.get(norm_txt(nom))
+                sub=by_nom_s.get(norm_txt(nom)) or by_base_s.get(_base_sub(nom))
                 if sub:
                     prev.append({"Sub-receta":sub["nombre"],"Stock actual":round(float(sub.get("stock",0) or 0),2),
                         "Stock nuevo":round(stkv,2),"Unidad":sub.get("unidad_rendimiento","")})
