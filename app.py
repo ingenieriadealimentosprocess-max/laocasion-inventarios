@@ -698,6 +698,26 @@ elif current == "insumos":
     ])
 
     with tab_list:
+        # 🧹 Limpiar insumos duplicados (mismo nombre)
+        _dups_ins=_duplicados_por_nombre(insumos)
+        if _dups_ins:
+            _extra_i=sum(len(v)-1 for v in _dups_ins.values())
+            with st.expander(f"🧹 Hay {len(_dups_ins)} insumo(s) repetido(s) — {_extra_i} copia(s) de más. **Limpiar**",expanded=True):
+                st.dataframe(pd.DataFrame([{"Insumo":v[0]["nombre"],
+                    "Copias":len(v),"Stocks":", ".join(fmt_n(x.get('stock',0)) for x in v)} for v in _dups_ins.values()]),
+                    hide_index=True,use_container_width=True)
+                st.caption("Se conserva la copia con MÁS stock (la actualizada) y se borran las demás. "
+                           "Ojo: las recetas que usen la copia borrada deberán reenlazarse — por eso conserva la de más stock.")
+                if st.button("🧹 Eliminar insumos duplicados",type="primary",key="dedup_ins"):
+                    borradas_i=0
+                    for v in _dups_ins.values():
+                        keep=max(v,key=lambda i:(i.get("stock",0) or 0, i.get("costo",0) or 0))
+                        for i in v:
+                            if i["id"]!=keep["id"]:
+                                try: db.delete_insumo(i["id"]); borradas_i+=1
+                                except Exception: pass
+                    st.success(f"✅ {borradas_i} insumo(s) duplicado(s) eliminado(s)."); reload()
+
         c1,c2,c3=st.columns([3,2,2])
         busq=c1.text_input("🔍 Buscar nombre o proveedor")
         fcat=c2.selectbox("Categoría",["Todas"]+CATEGORIAS,key="fcat")
