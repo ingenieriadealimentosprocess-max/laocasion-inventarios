@@ -1594,7 +1594,65 @@ elif current == "recetas":
 # ══════════════════════════════════════════════════════════════════════════════
 elif current == "subrecetas":
     st.title("🧪 Sub-recetas")
-    tab_list,tab_add,tab_imp,tab_exp=st.tabs(["📋 Listado","➕ Nueva","📥 Importar","📤 Exportar"])
+    tab_list,tab_add,tab_stk,tab_imp,tab_exp=st.tabs(["📋 Listado","➕ Nueva","📦 Importar stock","📥 Importar","📤 Exportar"])
+
+    with tab_stk:
+        st.subheader("📦 Importar stock de sub-recetas (conteo físico)")
+        st.caption("Sube tu archivo con el stock preparado que tienes. Empareja por **nombre** y actualiza el stock. "
+                   "Luego los movimientos (salidas/bajas) lo van descontando.")
+        _sres=st.session_state.pop("substk_result",None)
+        if _sres:
+            st.balloons()
+            st.success(f"### ✅ Stock de sub-recetas actualizado\n\n- **{_sres['n']}** sub-recetas · {_sres.get('err',0)} errores")
+        up_ss=st.file_uploader("Archivo con stock de sub-recetas (.xlsx o .csv)",type=["xlsx","csv"],key="up_sub_stock")
+        if up_ss:
+          try:
+            if up_ss.name.lower().endswith(".csv"):
+                dfs=pd.read_csv(up_ss)
+            else:
+                dfs=pd.read_excel(up_ss)
+            cols=list(dfs.columns)
+            def _guess(*keys):
+                for k in keys:
+                    for c in cols:
+                        if k in str(c).lower(): return c
+                return cols[0] if cols else None
+            gc1,gc2=st.columns(2)
+            col_nom=gc1.selectbox("Columna del NOMBRE de la sub-receta",cols,
+                index=cols.index(_guess("nombre","sub","item","producto")) if _guess("nombre","sub","item","producto") in cols else 0)
+            col_stk=gc2.selectbox("Columna del STOCK / cantidad",cols,
+                index=cols.index(_guess("stock","cantidad","existencia","actual")) if _guess("stock","cantidad","existencia","actual") in cols else (1 if len(cols)>1 else 0))
+            by_nom_s={norm_txt(s["nombre"]):s for s in subrecetas}
+            prev=[]; plan=[]; nomatch=[]
+            for _,r in dfs.iterrows():
+                nom=str(r.get(col_nom,"") or "").strip()
+                if not nom: continue
+                try: stkv=float(r.get(col_stk,0) or 0)
+                except: stkv=0
+                sub=by_nom_s.get(norm_txt(nom))
+                if sub:
+                    prev.append({"Sub-receta":sub["nombre"],"Stock actual":round(float(sub.get("stock",0) or 0),2),
+                        "Stock nuevo":round(stkv,2),"Unidad":sub.get("unidad_rendimiento","")})
+                    plan.append((sub,stkv))
+                else:
+                    nomatch.append(nom)
+            m1,m2,m3=st.columns(3)
+            m1.metric("Filas en archivo",len(dfs))
+            m2.metric("Enlazan a sub-receta",len(plan))
+            m3.metric("Sin emparejar",len(nomatch))
+            if prev:
+                st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=320)
+            if nomatch:
+                with st.expander(f"⚠️ {len(nomatch)} sin emparejar (nombre distinto)",expanded=True):
+                    st.dataframe(pd.DataFrame({"Nombre (archivo)":sorted(set(nomatch))}),hide_index=True,use_container_width=True)
+            if st.button("✅ Aplicar stock de sub-recetas",type="primary",use_container_width=True):
+                n=err=0
+                for sub,stkv in plan:
+                    try: db.update_subreceta(sub["id"],{"stock":round(stkv,3)}); n+=1
+                    except Exception: err+=1
+                st.session_state["substk_result"]={"n":n,"err":err}; reload()
+          except Exception as e:
+            st.error(f"❌ No se pudo leer el archivo: {type(e).__name__}: {e}")
 
     with tab_add:
         # ── Atajo: crear los panes de sanduche ──
