@@ -1079,10 +1079,15 @@ elif current == "insumos":
                             ant=round(float(ins.get("costo",0) or 0),2)
                             pnew=round(precio,2)
                             cambia=abs(pnew-ant)>0.001
-                            prev.append({"Código":cod,"Insumo (sistema)":ins["nombre"],"Empareja por":via,
-                                "Precio actual":ant,"Precio nuevo":pnew,
-                                "Cambio":round(pnew-ant,2),
-                                "Acción":"✏️ Actualiza" if cambia else "= Igual"})
+                            _rowp={"Código":cod,"Insumo (sistema)":ins["nombre"],"Empareja por":via,
+                                "Precio actual":ant,"Precio nuevo":pnew,"Cambio":round(pnew-ant,2),
+                                "Acción":"✏️ Actualiza" if cambia else "= Igual"}
+                            if act_stk and c_cant:
+                                try: _snew=round(float(row.get(c_cant,0) or 0),1)
+                                except: _snew=None
+                                _rowp["Stock actual"]=round(float(ins.get("stock",0) or 0),1)
+                                _rowp["Stock nuevo"]=_snew if _snew is not None else "—"
+                            prev.append(_rowp)
                             if cambia or act_stk:
                                 plan.append(("upd",ins,pnew,cambia,row))
                         else:
