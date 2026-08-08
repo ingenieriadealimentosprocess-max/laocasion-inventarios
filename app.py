@@ -2295,12 +2295,32 @@ elif current == "kardex":
                         "Saldo":fmt_n(max(0,balance)),"Costo unit.":fmt_cop(m.get("costo_unit",ins_k.get("costo",0))),
                         "Responsable":m.get("responsable") or "—"})
                 st.dataframe(pd.DataFrame(rows_k),hide_index=True,use_container_width=True)
-            if ins_k.get("historial_precios") and len(ins_k["historial_precios"])>1:
-                df_hp=pd.DataFrame(ins_k["historial_precios"])
-                fig_hp=px.line(df_hp,x="fecha",y="precio",markers=True,color_discrete_sequence=["#7C4A1E"])
-                fig_hp.update_layout(height=200,margin=dict(t=10,b=10),plot_bgcolor="#fff8f0",paper_bgcolor="#fff8f0")
-                st.plotly_chart(fig_hp,use_container_width=True)
-            else: st.info("Sin movimientos en el período.")
+            _hp=ins_k.get("historial_precios") or []
+            if len(_hp)>=1:
+                st.markdown("### 📈 Seguimiento del precio de compra")
+                # Tabla de cambios de precio (fecha, anterior, nuevo, variación)
+                rows_hp=[]; prev_p=None
+                for h in _hp:
+                    p=float(h.get("precio",0) or 0)
+                    ant=h.get("precio_anterior")
+                    if ant is None: ant=prev_p
+                    var=""
+                    if ant not in (None,0):
+                        pct=(p-float(ant))/float(ant)*100
+                        var=f"{'🔺' if pct>0 else '🔻' if pct<0 else '='} {pct:+.1f}%"
+                    rows_hp.append({"Fecha":h.get("fecha","—"),
+                        "Precio anterior":fmt_cop(ant) if ant not in (None,) else "—",
+                        "Precio":fmt_cop(p),"Variación":var})
+                    prev_p=p
+                st.dataframe(pd.DataFrame(rows_hp),hide_index=True,use_container_width=True)
+                if len(_hp)>1:
+                    df_hp=pd.DataFrame(_hp)
+                    fig_hp=px.line(df_hp,x="fecha",y="precio",markers=True,color_discrete_sequence=["#7C4A1E"])
+                    fig_hp.update_layout(height=220,margin=dict(t=10,b=10),plot_bgcolor="#fff8f0",paper_bgcolor="#fff8f0",
+                                         yaxis_title="Precio de compra")
+                    st.plotly_chart(fig_hp,use_container_width=True)
+            elif not all_k:
+                st.info("Sin movimientos en el período.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
