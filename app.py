@@ -1139,13 +1139,22 @@ elif current == "insumos":
                                         if "stock" in d: stk+=1
                                 else:
                                     _,nom,precio,row=item
-                                    d={"nombre":nom,"categoria":"Otros",
+                                    _newid=db.uid()
+                                    _stk0=float(row.get(c_cant,0) or 0) if c_cant else 0
+                                    d={"id":_newid,"nombre":nom,"categoria":"Otros",
                                        "unidad":str(row.get(c_uni,"unidad") if c_uni else "unidad"),
-                                       "stock":float(row.get(c_cant,0) or 0) if c_cant else 0,
+                                       "stock":_stk0,
                                        "minimo":float(row.get(c_min,0) or 0) if c_min else 0,
                                        "costo":round(precio,2),"ultima_entrada":hoy(),
                                        "historial_precios":[{"fecha":hoy(),"precio":round(precio,2)}] if precio>0 else []}
                                     db.add_insumo(d); new+=1
+                                    # Registrar la ENTRADA inicial en el historial/kardex
+                                    if _stk0>0:
+                                        try:
+                                            db.add_movimiento({"tipo":"entrada","insumo_id":_newid,"nombre":nom,
+                                                "cantidad":_stk0,"costo_unit":round(precio,2),"fecha":hoy(),
+                                                "responsable":"Import Loggro","nota":"Alta inicial (import Loggro)","proveedor":""})
+                                        except Exception: pass
                             except Exception as ex:
                                 err+=1
                                 _nm=item[1]["nombre"] if item[0]=="upd" else item[1]
