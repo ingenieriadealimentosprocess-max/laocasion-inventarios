@@ -965,9 +965,12 @@ elif current == "insumos":
         # Resultado de la última importación (queda visible tras la recarga)
         _pr=st.session_state.pop("prec_result",None)
         if _pr:
-            st.success(f"✅ Resultado: **{_pr['upd']}** precios actualizados"
-                       +(f", {_pr['new']} creados" if _pr['new'] else "")
-                       +(f", **{_pr['err']} errores**" if _pr['err'] else ""))
+            st.balloons()
+            st.success(f"### ✅ ¡Aplicado con éxito!\n\n"
+                       f"- **{_pr['upd']}** precios actualizados\n"
+                       f"- **{_pr.get('stk',0)}** stock actualizados\n"
+                       + (f"- **{_pr['new']}** insumos creados\n" if _pr['new'] else "")
+                       + (f"- ⚠️ **{_pr['err']}** errores\n" if _pr['err'] else ""))
             if _pr.get("errs"):
                 with st.expander(f"⚠️ Ver {len(_pr['errs'])} error(es) reales"):
                     for m in _pr["errs"]: st.write("• "+m)
@@ -1080,7 +1083,7 @@ elif current == "insumos":
                                + (f" · nuevos a crear: {n_new}" if crear else ""))
                     st.dataframe(pd.DataFrame(prev),hide_index=True,use_container_width=True,height=340)
                     if st.button("✅ Aplicar actualización de precios",type="primary",use_container_width=True):
-                        upd=new=err=0; errs=[]
+                        upd=new=err=stk=0; errs=[]
                         for item in plan:
                             try:
                                 if item[0]=="upd":
@@ -1098,6 +1101,7 @@ elif current == "insumos":
                                     if d:
                                         db.update_insumo(ins["id"],d)
                                         if cambia: upd+=1
+                                        if "stock" in d: stk+=1
                                 else:
                                     _,nom,precio,row=item
                                     d={"nombre":nom,"categoria":"Otros",
@@ -1116,7 +1120,8 @@ elif current == "insumos":
                             rep={"fecha":hoy(),"codigos":[{"codigo":c.upper(),"productos":cod_names.get(c,[])} for c in sorted(_dups)]}
                             db.set_alerta_import(json.dumps(rep,ensure_ascii=False))
                         except Exception: pass
-                        st.session_state["prec_result"]={"upd":upd,"new":new,"err":err,"errs":errs}
+                        st.session_state["prec_result"]={"upd":upd,"new":new,"err":err,"errs":errs,"stk":stk}
+                        st.toast(f"✅ Aplicado: {upd} precios y {stk} stock actualizados",icon="✅")
                         reload()
             except Exception as e:
                 st.error(f"❌ No se pudo leer el archivo: {type(e).__name__}: {e}")
