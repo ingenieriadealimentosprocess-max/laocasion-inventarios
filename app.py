@@ -1948,6 +1948,20 @@ elif current == "movimientos":
         if _vres:
             st.success(f"✅ {_vres['n_mov']} ventas registradas · {_vres['n_ins']} insumos descontados"
                        + (f" · {_vres['err']} errores" if _vres['err'] else ""))
+        # ── 🗑️ Deshacer una importación de ventas equivocada ──
+        _mov_imp=[m for m in movs if m.get("tipo")=="venta" and m.get("responsable")=="Import Loggro"]
+        if _mov_imp:
+            with st.expander(f"🗑️ Deshacer ventas importadas ({len(_mov_imp)} movimientos)"):
+                st.caption("Borra los movimientos de venta creados por una importación (los que tienen responsable "
+                           "«Import Loggro»). Útil si importaste un archivo equivocado (acumulado, período doble…). "
+                           "⚠️ Esto NO devuelve el stock — para corregir el inventario, re-importa el stock de Loggro "
+                           "(Insumos → Actualizar precios con «Actualizar también stock»).")
+                if st.button(f"🗑️ Eliminar {len(_mov_imp)} movimientos de ventas importadas",type="secondary"):
+                    _b=0
+                    for m in _mov_imp:
+                        try: db.delete_movimiento(m["id"]); _b+=1
+                        except Exception: pass
+                    st.success(f"✅ {_b} movimientos de venta eliminados."); reload()
         if up_vt:
           try:
             ventas, fechas = parse_ventas_loggro(up_vt.getvalue())
